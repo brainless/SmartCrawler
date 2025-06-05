@@ -2,6 +2,13 @@
 
 An intelligent web crawler built in Rust that uses Claude AI to select the most relevant URLs from website sitemaps based on crawling objectives.
 
+## Created with Claude Code
+### Initial prompt
+
+```
+Please create a crawler and scraper in Rust. You can use any crates you want. The crawler will be given an objective and list of domains via command prompt. Objective may ask for existence of some information or list of extracted data or similar. The crawler should find the sitemap for any domain and ask Claude which URLs make most sense to crawl for the given objective. The crawler should be conservative in   crawling and try to use Claude to reach results fast.
+```
+
 ## Features
 
 - **Sitemap Discovery**: Automatically finds and parses XML sitemaps for any domain
