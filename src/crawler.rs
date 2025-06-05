@@ -60,11 +60,26 @@ impl SmartCrawler {
 
     pub async fn crawl_all_domains(&self) -> Result<CrawlerResults, CrawlerError> {
         let mut results = Vec::new();
+        let mut processed_domains = std::collections::HashSet::new();
         
-        for domain in &self.config.domains {
+        loop {
+            // Get next unprocessed domain
+            let next_domain = {
+                let domains = self.config.domains.lock().unwrap();
+                domains.iter()
+                    .find(|domain| !processed_domains.contains(*domain))
+                    .cloned()
+            };
+            
+            let domain = match next_domain {
+                Some(d) => d,
+                None => break, // No more domains to process
+            };
+            
+            processed_domains.insert(domain.clone());
             tracing::info!("Starting crawl for domain: {}", domain);
             
-            match self.crawl_domain(domain).await {
+            match self.crawl_domain(&domain).await {
                 Ok(result) => {
                     tracing::info!("Successfully crawled domain: {}", domain);
                     results.push(result);
@@ -87,9 +102,10 @@ impl SmartCrawler {
 
         let overall_summary = self.generate_overall_summary(&results).await?;
 
+        let final_domains = self.config.domains.lock().unwrap().clone();
         Ok(CrawlerResults {
             objective: self.config.objective.clone(),
-            domains: self.config.domains.clone(),
+            domains: final_domains,
             results,
             overall_summary,
         })
@@ -244,7 +260,7 @@ Provide an overall summary that includes:
 
 Keep the summary comprehensive but concise."#,
             self.config.objective,
-            self.config.domains.join(", "),
+            self.config.domains.lock().unwrap().join(", "),
             combined_summaries.join("\n\n---\n\n")
         );
 

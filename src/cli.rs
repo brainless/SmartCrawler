@@ -1,10 +1,11 @@
 use clap::{Arg, Command};
 use std::env;
+use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone)]
 pub struct CrawlerConfig {
     pub objective: String,
-    pub domains: Vec<String>,
+    pub domains: Arc<Mutex<Vec<String>>>,
     pub max_urls_per_domain: usize,
     pub delay_ms: u64,
     pub output_file: Option<String>,
@@ -12,6 +13,12 @@ pub struct CrawlerConfig {
 }
 
 impl CrawlerConfig {
+    pub fn add_domain(&self, domain: String) {
+        let mut domains = self.domains.lock().unwrap();
+        if !domains.contains(&domain) {
+            domains.push(domain);
+        }
+    }
     pub fn from_args() -> Self {
         let matches = Command::new("smart-crawler")
             .version("1.0.0")
@@ -90,7 +97,7 @@ impl CrawlerConfig {
 
         CrawlerConfig {
             objective,
-            domains,
+            domains: Arc::new(Mutex::new(domains)),
             max_urls_per_domain,
             delay_ms,
             output_file,
@@ -103,11 +110,12 @@ impl CrawlerConfig {
             return Err("Objective cannot be empty".to_string());
         }
 
-        if self.domains.is_empty() {
+        let domains = self.domains.lock().unwrap();
+        if domains.is_empty() {
             return Err("At least one domain must be specified".to_string());
         }
 
-        for domain in &self.domains {
+        for domain in domains.iter() {
             if domain.trim().is_empty() {
                 return Err("Domain names cannot be empty".to_string());
             }
