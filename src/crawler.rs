@@ -123,9 +123,37 @@ impl SmartCrawler {
         tracing::info!("Found {} URLs in sitemap for {}", sitemap_urls.len(), domain);
 
         let urls_to_analyze = if sitemap_urls.is_empty() {
-            tracing::info!("No URLs found in sitemap for {}, using root URL", domain);
+            tracing::info!("No URLs found in sitemap for {}, scraping root URL for links", domain);
             let root_url = format!("https://{}", domain);
-            vec![root_url]
+            
+            // Scrape the root URL to extract all links
+            match self.scraper.scrape_url(&root_url).await {
+                Ok(scraped_content) => {
+                    let mut discovered_urls = scraped_content.links;
+                    
+                    // Filter to only include URLs from the same domain
+                    discovered_urls.retain(|url| {
+                        if let Ok(parsed_url) = url::Url::parse(url) {
+                            if let Some(url_domain) = parsed_url.host_str() {
+                                return url_domain == domain || url_domain.ends_with(&format!(".{}", domain));
+                            }
+                        }
+                        false
+                    });
+                    
+                    // Remove duplicates and include the root URL
+                    let mut unique_urls: std::collections::HashSet<String> = discovered_urls.into_iter().collect();
+                    unique_urls.insert(root_url.clone());
+                    
+                    let final_urls: Vec<String> = unique_urls.into_iter().collect();
+                    tracing::info!("Discovered {} URLs from root page of {}", final_urls.len(), domain);
+                    final_urls
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to scrape root URL {}: {}, using just root URL", root_url, e);
+                    vec![root_url]
+                }
+            }
         } else {
             sitemap_urls.iter().map(|u| u.as_ref().to_string()).collect()
         };

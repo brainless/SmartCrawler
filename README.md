@@ -25,6 +25,12 @@ Here are the next prompts I tried:
 
 > In SmartCrawler::crawl_domain if sitemap_urls.is_empty then we should not return immediately. Instead we should use the root URL for the domain and start with it.
 
+> In ClaudeClient::select_urls please update prompt to only return URLs that in the existing list of urls argument. Also please check the response from Claude and ignore return URLs that are not in the existing list of urls.
+
+> In ClaudeClient::select_urls please add an info log of the urls argument.
+
+> In SmartCrawler::crawl_domain if sitemap_urls.is_empty then we should take the root url of the domain and scrape that URL to get all the URLs in it.
+
 ## Features
 
 - **Sitemap Discovery**: Automatically finds and parses XML sitemaps for any domain

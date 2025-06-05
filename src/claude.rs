@@ -1,6 +1,7 @@
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::collections::HashSet;
 use std::env;
 use thiserror::Error;
 
@@ -63,16 +64,20 @@ impl ClaudeClient {
             .map(|u| u.as_ref().to_string())
             .collect();
 
+        tracing::info!("URLs provided to Claude for selection: {:?}", url_list);
+
         let prompt = format!(
             r#"You are helping a web crawler select the most relevant URLs to crawl for a specific objective.
 
 Domain: {}
 Objective: {}
 
-Here are the available URLs from the sitemap:
+Here are the available URLs:
 {}
 
 Please analyze these URLs and select the {} most relevant ones that would likely contain information related to the objective. 
+
+IMPORTANT: You MUST only return URLs that are exactly from the list above. Do not modify, create, or suggest any new URLs.
 
 Consider:
 1. URL structure and path names that suggest relevant content
@@ -80,7 +85,7 @@ Consider:
 3. Depth and specificity of URLs
 4. Avoid redundant or overly similar URLs
 
-Return ONLY a JSON array of the selected URLs, nothing else. Example format:
+Return ONLY a JSON array of the selected URLs that exist in the provided list, nothing else. Example format:
 ["https://example.com/page1", "https://example.com/page2"]"#,
             domain,
             objective,
@@ -97,7 +102,22 @@ Return ONLY a JSON array of the selected URLs, nothing else. Example format:
         let selected_urls: Vec<String> = serde_json::from_str(&content.text)
             .map_err(|_| ClaudeError::ApiError("Failed to parse URL selection response".to_string()))?;
 
-        Ok(selected_urls)
+        // Create a set of valid URLs for fast lookup
+        let valid_urls: HashSet<String> = url_list.into_iter().collect();
+        
+        // Filter out any URLs that are not in the original list
+        let filtered_urls: Vec<String> = selected_urls
+            .into_iter()
+            .filter(|url| {
+                let is_valid = valid_urls.contains(url);
+                if !is_valid {
+                    tracing::warn!("Claude returned URL not in original list, ignoring: {}", url);
+                }
+                is_valid
+            })
+            .collect();
+
+        Ok(filtered_urls)
     }
 
     pub async fn analyze_content(
