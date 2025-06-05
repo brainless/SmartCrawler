@@ -3,6 +3,8 @@ use crate::scraper::{ScrapedContent, WebScraper};
 use crate::sitemap::SitemapParser;
 use crate::cli::CrawlerConfig;
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, Mutex};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -42,6 +44,7 @@ pub struct SmartCrawler {
     claude_client: ClaudeClient,
     scraper: WebScraper,
     config: CrawlerConfig,
+    scraped_urls: Arc<Mutex<HashMap<String, HashSet<String>>>>,
 }
 
 impl SmartCrawler {
@@ -55,6 +58,7 @@ impl SmartCrawler {
             claude_client,
             scraper,
             config,
+            scraped_urls: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 
@@ -118,27 +122,40 @@ impl SmartCrawler {
         let sitemap_urls = self.sitemap_parser.get_all_urls(domain).await?;
         tracing::info!("Found {} URLs in sitemap for {}", sitemap_urls.len(), domain);
 
-        if sitemap_urls.is_empty() {
-            return Ok(CrawlResult {
-                domain: domain.to_string(),
-                objective: self.config.objective.clone(),
-                selected_urls: Vec::new(),
-                scraped_content: Vec::new(),
-                analysis: vec!["No URLs found in sitemap".to_string()],
-                summary: "No content to analyze - empty sitemap".to_string(),
-            });
-        }
+        let urls_to_analyze = if sitemap_urls.is_empty() {
+            tracing::info!("No URLs found in sitemap for {}, using root URL", domain);
+            let root_url = format!("https://{}", domain);
+            vec![root_url]
+        } else {
+            sitemap_urls.iter().map(|u| u.as_ref().to_string()).collect()
+        };
 
         // Step 2: Use Claude to select relevant URLs
         tracing::info!("Asking Claude to select relevant URLs for: {}", domain);
-        let selected_urls = self.claude_client.select_urls(
+        let mut selected_urls = self.claude_client.select_urls(
             &self.config.objective,
-            &sitemap_urls,
+            &urls_to_analyze,
             domain,
             self.config.max_urls_per_domain,
         ).await?;
 
-        tracing::info!("Claude selected {} URLs for {}", selected_urls.len(), domain);
+        // Step 2.5: Filter out already scraped URLs and track unique URLs
+        {
+            let mut scraped_urls = self.scraped_urls.lock().unwrap();
+            let domain_urls = scraped_urls.entry(domain.to_string()).or_insert_with(HashSet::new);
+            
+            selected_urls.retain(|url| {
+                if domain_urls.contains(url) {
+                    tracing::debug!("Skipping already scraped URL: {}", url);
+                    false
+                } else {
+                    domain_urls.insert(url.clone());
+                    true
+                }
+            });
+        }
+
+        tracing::info!("Selected {} unique URLs for {} (after deduplication)", selected_urls.len(), domain);
 
         if selected_urls.is_empty() {
             return Ok(CrawlResult {

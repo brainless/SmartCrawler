@@ -23,6 +23,12 @@ pub struct SitemapUrl {
     pub priority: Option<f32>,
 }
 
+impl AsRef<str> for SitemapUrl {
+    fn as_ref(&self) -> &str {
+        &self.loc
+    }
+}
+
 #[derive(Debug)]
 pub struct SitemapParser {
     client: Client,

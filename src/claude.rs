@@ -3,7 +3,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::env;
 use thiserror::Error;
-use crate::sitemap::SitemapUrl;
 
 #[derive(Error, Debug)]
 pub enum ClaudeError {
@@ -49,16 +48,19 @@ impl ClaudeClient {
         Ok(Self { client, api_key })
     }
 
-    pub async fn select_urls(
+    pub async fn select_urls<T>(
         &self,
         objective: &str,
-        urls: &[SitemapUrl],
+        urls: &[T],
         domain: &str,
         max_urls: usize,
-    ) -> Result<Vec<String>, ClaudeError> {
+    ) -> Result<Vec<String>, ClaudeError>
+    where
+        T: AsRef<str>,
+    {
         let url_list: Vec<String> = urls.iter()
             .take(200) // Limit to avoid token limits
-            .map(|u| u.loc.clone())
+            .map(|u| u.as_ref().to_string())
             .collect();
 
         let prompt = format!(
