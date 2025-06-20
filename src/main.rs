@@ -1,15 +1,12 @@
-use smart_crawler::{
-    cli::CrawlerConfig,
-    crawler::SmartCrawler,
-};
-use tracing::{info, error};
+use smart_crawler::{cli::CrawlerConfig, crawler::SmartCrawler};
+use tracing::{error, info};
 use tracing_subscriber;
 
 #[tokio::main]
 async fn main() {
     // Parse command line arguments
     let config = CrawlerConfig::from_args();
-    
+
     // Initialize logging
     if config.verbose {
         tracing_subscriber::fmt()
@@ -34,7 +31,7 @@ async fn main() {
     info!("Delay between requests: {}ms", config.delay_ms);
 
     // Create and run crawler
-    let crawler = match SmartCrawler::new(config) {
+    let crawler = match SmartCrawler::new(config).await {
         Ok(crawler) => crawler,
         Err(e) => {
             error!("Failed to initialize crawler: {}", e);
@@ -45,13 +42,13 @@ async fn main() {
     match crawler.crawl_all_domains().await {
         Ok(results) => {
             info!("Crawling completed successfully!");
-            
+
             // Print results to console
             println!("\n{:=^80}", " CRAWLING RESULTS ");
             println!("Objective: {}", results.objective);
             println!("Domains: {}", results.domains.join(", "));
             println!("\n{:-^80}", " DOMAIN RESULTS ");
-            
+
             for result in &results.results {
                 println!("\nDomain: {}", result.domain);
                 println!("URLs Selected: {}", result.selected_urls.len());
@@ -59,7 +56,7 @@ async fn main() {
                 println!("Summary: {}", result.summary);
                 println!("{:-^50}", "");
             }
-            
+
             println!("\n{:-^80}", " OVERALL SUMMARY ");
             println!("{}", results.overall_summary);
             println!("{:=^80}", "");
