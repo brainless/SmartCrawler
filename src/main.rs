@@ -1,9 +1,11 @@
 use smart_crawler::{cli::CrawlerConfig, crawler::SmartCrawler};
 use tracing::{error, info};
 use tracing_subscriber;
+use dotenv::dotenv;
 
 #[tokio::main]
 async fn main() {
+    dotenv().ok();
     // Parse command line arguments
     let config = CrawlerConfig::from_args();
 
