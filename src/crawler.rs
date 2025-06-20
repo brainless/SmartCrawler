@@ -29,7 +29,6 @@ pub struct CrawlResult {
     pub selected_urls: Vec<String>,
     pub scraped_content: Vec<ScrapedContent>,
     pub analysis: Vec<String>,
-    pub summary: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -37,7 +36,6 @@ pub struct CrawlerResults {
     pub objective: String,
     pub domains: Vec<String>,
     pub results: Vec<CrawlResult>,
-    pub overall_summary: String,
 }
 
 pub struct SmartCrawler {
@@ -106,14 +104,12 @@ impl SmartCrawler {
             }
         }
 
-        let overall_summary = self.generate_overall_summary(&results).await?;
-
         let final_domains = self.config.domains.lock().unwrap().clone();
         Ok(CrawlerResults {
             objective: self.config.objective.clone(),
             domains: final_domains,
             results,
-            overall_summary,
+            overall_summary: "Overall summary generation removed.".to_string(),
         })
     }
 
@@ -275,97 +271,14 @@ impl SmartCrawler {
             }
         }
 
-        // Step 5: Generate summary
-        let summary = self.generate_domain_summary(domain, &analysis).await?;
-
         Ok(CrawlResult {
             domain: domain.to_string(),
             objective: self.config.objective.clone(),
             selected_urls,
             scraped_content,
             analysis,
-            summary,
+            summary: "Domain summary generation removed.".to_string(),
         })
-    }
-
-    async fn generate_domain_summary(
-        &self,
-        domain: &str,
-        analysis: &[String],
-    ) -> Result<String, CrawlerError> {
-        let combined_analysis = analysis.join("\n\n---\n\n");
-
-        let summary_prompt = format!(
-            r#"Please provide a concise summary of the crawling results for domain: {}
-
-Objective: {}
-
-Analysis results:
-{}
-
-Summarize:
-1. Key findings related to the objective
-2. Overall relevance and quality of information found
-3. Any notable patterns or insights
-4. Recommendations for further investigation (if any)
-
-Keep the summary focused and actionable."#,
-            domain, self.config.objective, combined_analysis
-        );
-
-        match self.claude_client.send_message(&summary_prompt).await {
-            Ok(response) => {
-                if let Some(content) = response.content.first() {
-                    Ok(content.text.clone())
-                } else {
-                    Ok("No summary generated".to_string())
-                }
-            }
-            Err(_) => Ok(format!("Summary generation failed for domain: {}", domain)),
-        }
-    }
-
-    async fn generate_overall_summary(
-        &self,
-        results: &[CrawlResult],
-    ) -> Result<String, CrawlerError> {
-        let combined_summaries: Vec<String> = results
-            .iter()
-            .map(|r| format!("Domain: {}\nSummary: {}", r.domain, r.summary))
-            .collect();
-
-        let overall_prompt = format!(
-            r#"Please provide an overall summary of the multi-domain crawling results.
-
-Objective: {}
-Domains crawled: {}
-
-Individual domain summaries:
-{}
-
-Provide an overall summary that includes:
-1. How well the objective was achieved across all domains
-2. Key findings and patterns across domains
-3. Which domains provided the most valuable information
-4. Overall recommendations or next steps
-5. Any limitations or areas for improvement
-
-Keep the summary comprehensive but concise."#,
-            self.config.objective,
-            self.config.domains.lock().unwrap().join(", "),
-            combined_summaries.join("\n\n---\n\n")
-        );
-
-        match self.claude_client.send_message(&overall_prompt).await {
-            Ok(response) => {
-                if let Some(content) = response.content.first() {
-                    Ok(content.text.clone())
-                } else {
-                    Ok("No overall summary generated".to_string())
-                }
-            }
-            Err(_) => Ok("Overall summary generation failed".to_string()),
-        }
     }
 
     pub async fn save_results(&self, results: &CrawlerResults) -> Result<(), CrawlerError> {

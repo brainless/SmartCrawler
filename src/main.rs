@@ -55,13 +55,29 @@ async fn main() {
                 println!("\nDomain: {}", result.domain);
                 println!("URLs Selected: {}", result.selected_urls.len());
                 println!("Pages Scraped: {}", result.scraped_content.len());
-                println!("Summary: {}", result.summary);
+                println!("Analysis:");
+                for analysis_item in &result.analysis {
+                    println!("- {}", analysis_item);
+                }
+
+                println!("\n{:-^50}", " SCRAPED CONTENT DETAILS ");
+                if result.scraped_content.is_empty() {
+                    println!("No content scraped for this domain.");
+                } else {
+                    for (idx, content) in result.scraped_content.iter().enumerate() {
+                        println!("\n[{}] URL: {}", idx + 1, content.url);
+                        if let Some(title) = &content.title {
+                            println!("    Title: {}", title);
+                        }
+                        let snippet = content.text_content.chars().take(200).collect::<String>();
+                        println!("    Content Snippet: {}...", snippet);
+                        if idx < result.scraped_content.len() - 1 {
+                            println!("    {:-^40}", ""); // Separator between content items
+                        }
+                    }
+                }
                 println!("{:-^50}", "");
             }
-
-            println!("\n{:-^80}", " OVERALL SUMMARY ");
-            println!("{}", results.overall_summary);
-            println!("{:=^80}", "");
 
             // Save results if output file specified
             if let Err(e) = crawler.save_results(&results).await {
