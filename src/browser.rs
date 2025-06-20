@@ -8,6 +8,8 @@ use futures::future::join_all;
 pub enum BrowserError {
     #[error("Browser error: {0}")]
     BrowserError(#[from] fantoccini::error::CmdError),
+    #[error("New session error: {0}")]
+    NewSessionError(#[from] fantoccini::error::NewSessionError),
 }
 
 pub struct Browser {
