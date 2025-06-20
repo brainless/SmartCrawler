@@ -1,4 +1,4 @@
-use crate::scraper::ScrapedContent;
+use crate::content::ScrapedContent;
 use fantoccini::{Client, ClientBuilder, Locator};
 use futures::future::join_all;
 use reqwest::Url;
@@ -35,11 +35,43 @@ impl Browser {
         let title = self.client.find(Locator::Css("title")).await?;
         let title = title.text().await?;
 
-        let text_content = self.client.find(Locator::Css("body")).await?;
-        let text_content = text_content.text().await?;
+        let content_selectors = vec![
+            "main",
+            "article",
+            ".content",
+            ".main-content",
+            "#content",
+            "#main",
+            ".post-content",
+            ".entry-content",
+            "body",
+        ];
+
+        let mut text_content = String::new();
+
+        for selector_str in content_selectors {
+            if let Ok(element) = self.client.find(Locator::Css(selector_str)).await {
+                if let Ok(text) = element.text().await {
+                    // Remove script and style elements
+                    let text: String = text.split_whitespace().collect::<Vec<_>>().join(" ");
+
+                    if text.len() > text_content.len() {
+                        text_content = text;
+                    }
+                }
+            }
+        }
+
+        // Fallback to body if no content found
+        if text_content.trim().is_empty() {
+            if let Ok(body_selector) = self.client.find(Locator::Css("body")).await {
+                if let Ok(body) = body_selector.text().await {
+                    text_content = body.split_whitespace().collect::<Vec<_>>().join(" ");
+                }
+            }
+        }
 
         let links = self.client.find_all(Locator::Css("a[href]")).await?;
-
         let links: Vec<String> = join_all(links.iter().map(|link| link.attr("href")))
             .await
             .iter()

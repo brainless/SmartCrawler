@@ -1,7 +1,7 @@
 use crate::browser::Browser;
 use crate::claude::ClaudeClient;
 use crate::cli::CrawlerConfig;
-use crate::scraper::{ScrapedContent, WebScraper};
+use crate::content::ScrapedContent;
 use crate::sitemap::SitemapParser;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -14,8 +14,6 @@ pub enum CrawlerError {
     SitemapError(#[from] crate::sitemap::SitemapError),
     #[error("Claude API error: {0}")]
     ClaudeError(#[from] crate::claude::ClaudeError),
-    #[error("Scraper error: {0}")]
-    ScraperError(#[from] crate::scraper::ScraperError),
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),
     #[error("JSON error: {0}")]
@@ -45,7 +43,6 @@ pub struct CrawlerResults {
 pub struct SmartCrawler {
     sitemap_parser: SitemapParser,
     claude_client: ClaudeClient,
-    scraper: WebScraper,
     browser: Browser,
     config: CrawlerConfig,
     scraped_urls: Arc<Mutex<HashMap<String, HashSet<String>>>>,
@@ -55,13 +52,11 @@ impl SmartCrawler {
     pub async fn new(config: CrawlerConfig) -> Result<Self, CrawlerError> {
         let sitemap_parser = SitemapParser::new();
         let claude_client = ClaudeClient::new()?;
-        let scraper = WebScraper::new(config.delay_ms);
         let browser = Browser::new().await?;
 
         Ok(Self {
             sitemap_parser,
             claude_client,
-            scraper,
             browser,
             config,
             scraped_urls: Arc::new(Mutex::new(HashMap::new())),
