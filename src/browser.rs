@@ -1,7 +1,6 @@
 use crate::content::ScrapedContent;
 use fantoccini::{Client, ClientBuilder, Locator};
 use futures::future::join_all;
-use reqwest::Url;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -10,6 +9,8 @@ pub enum BrowserError {
     BrowserError(#[from] fantoccini::error::CmdError),
     #[error("New session error: {0}")]
     NewSessionError(#[from] fantoccini::error::NewSessionError),
+    #[error("Error closing browser: {0}")]
+    CloseError(String),
 }
 
 pub struct Browser {
@@ -26,12 +27,6 @@ impl Browser {
 
     pub async fn scrape_url(&self, url: &str) -> Result<ScrapedContent, BrowserError> {
         self.client.goto(url).await?;
-        let _: () = self
-            .client
-            .wait()
-            .for_url(&Url::parse(url).unwrap())
-            .await?;
-
         let title = self.client.find(Locator::Css("title")).await?;
         let title = title.text().await?;
 
@@ -137,5 +132,12 @@ impl Browser {
         urls: &[String],
     ) -> Vec<Result<ScrapedContent, BrowserError>> {
         join_all(urls.iter().map(|url| self.scrape_url(url))).await
+    }
+
+    pub async fn close(self) -> Result<(), BrowserError> {
+        match self.client.close().await {
+            Ok(_) => Ok(()),
+            Err(e) => Err(BrowserError::CloseError(e.to_string())),
+        }
     }
 }

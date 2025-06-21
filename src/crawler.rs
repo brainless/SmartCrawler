@@ -41,7 +41,6 @@ pub struct CrawlerResults {
 pub struct SmartCrawler {
     sitemap_parser: SitemapParser,
     claude_client: ClaudeClient,
-    browser: Browser,
     config: CrawlerConfig,
     scraped_urls: Arc<Mutex<HashMap<String, HashSet<String>>>>,
 }
@@ -50,12 +49,10 @@ impl SmartCrawler {
     pub async fn new(config: CrawlerConfig) -> Result<Self, CrawlerError> {
         let sitemap_parser = SitemapParser::new();
         let claude_client = ClaudeClient::new()?;
-        let browser = Browser::new().await?;
 
         Ok(Self {
             sitemap_parser,
             claude_client,
-            browser,
             config,
             scraped_urls: Arc::new(Mutex::new(HashMap::new())),
         })
@@ -121,6 +118,7 @@ impl SmartCrawler {
             sitemap_urls.len(),
             domain
         );
+        let browser = Browser::new().await?;
 
         let urls_to_analyze = if sitemap_urls.is_empty() {
             tracing::info!(
@@ -130,7 +128,7 @@ impl SmartCrawler {
             let root_url = format!("https://{}", domain);
 
             // Scrape the root URL to extract all links
-            match self.browser.scrape_url(&root_url).await {
+            match browser.scrape_url(&root_url).await {
                 Ok(scraped_content) => {
                     let mut discovered_urls = scraped_content.links;
 
@@ -226,7 +224,8 @@ impl SmartCrawler {
             selected_urls.len(),
             domain
         );
-        let scrape_results = self.browser.scrape_multiple(&selected_urls).await;
+        let scrape_results = browser.scrape_multiple(&selected_urls).await;
+        browser.close().await?;
 
         let mut scraped_content = Vec::new();
         let mut analysis = Vec::new();
