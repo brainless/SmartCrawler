@@ -97,7 +97,6 @@ impl SmartCrawler {
                         selected_urls: Vec::new(),
                         scraped_content: Vec::new(),
                         analysis: vec![format!("Failed to crawl: {}", e)],
-                        summary: format!("Domain crawl failed: {}", e),
                     };
                     results.push(failed_result);
                 }
@@ -109,7 +108,6 @@ impl SmartCrawler {
             objective: self.config.objective.clone(),
             domains: final_domains,
             results,
-            overall_summary: "Overall summary generation removed.".to_string(),
         })
     }
 
@@ -219,7 +217,6 @@ impl SmartCrawler {
                 selected_urls: Vec::new(),
                 scraped_content: Vec::new(),
                 analysis: vec!["No relevant URLs selected by Claude".to_string()],
-                summary: "No relevant content found for the objective".to_string(),
             });
         }
 
@@ -277,7 +274,6 @@ impl SmartCrawler {
             selected_urls,
             scraped_content,
             analysis,
-            summary: "Domain summary generation removed.".to_string(),
         })
     }
 
