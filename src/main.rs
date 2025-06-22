@@ -1,4 +1,9 @@
-use smart_crawler::{cli::CrawlerConfig, crawler::SmartCrawler};
+use smart_crawler::{
+    cli::CrawlerConfig,
+    claude::ClaudeClient, // Import ClaudeClient for instantiation
+    crawler::SmartCrawler,
+};
+use std::sync::Arc; // Import Arc
 use tracing::{error, info};
 use tracing_subscriber;
 use dotenv::dotenv;
@@ -32,10 +37,21 @@ async fn main() {
     info!("Max URLs per domain: {}", config.max_urls_per_domain);
     info!("Delay between requests: {}ms", config.delay_ms);
 
+    // Instantiate ClaudeClient
+    let claude_client = match ClaudeClient::new() {
+        Ok(client) => client,
+        Err(e) => {
+            error!("Failed to create ClaudeClient: {}", e);
+            std::process::exit(1);
+        }
+    };
+
     // Create and run crawler
-    let crawler = match SmartCrawler::new(config).await {
+    // Pass Arc<ClaudeClient> to SmartCrawler::new
+    let crawler = match SmartCrawler::new(config, Arc::new(claude_client)).await {
         Ok(crawler) => crawler,
         Err(e) => {
+            // CrawlerError now includes LlmError or ClaudeInitializationError
             error!("Failed to initialize crawler: {}", e);
             std::process::exit(1);
         }

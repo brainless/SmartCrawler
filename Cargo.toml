@@ -18,3 +18,4 @@ quick-xml = { version = "0.30", features = ["serialize"] }
 fantoccini = "0.22.0"
 dotenv = "0.15"
 futures = "0.3.31"
+async-trait = "0.1"

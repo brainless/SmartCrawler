@@ -1,7 +1,8 @@
 use crate::browser::Browser;
-use crate::claude::ClaudeClient;
+// Remove direct ClaudeClient import, use LLM trait
 use crate::cli::CrawlerConfig;
 use crate::content::ScrapedContent;
+use crate::llm::{LLM, LlmError}; // Import LLM trait and LlmError
 use crate::sitemap::SitemapParser;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -12,14 +13,25 @@ use thiserror::Error;
 pub enum CrawlerError {
     #[error("Sitemap error: {0}")]
     SitemapError(#[from] crate::sitemap::SitemapError),
-    #[error("Claude API error: {0}")]
-    ClaudeError(#[from] crate::claude::ClaudeError),
+    // #[error("Claude API error: {0}")]  // Will be replaced by LlmError
+    // ClaudeError(#[from] crate::claude::ClaudeError), // This might be removed if ClaudeError is not directly exposed
+    #[error("LLM error: {0}")]
+    LlmError(String), // Store as string for simplicity, or use Box<dyn Error>
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),
     #[error("JSON error: {0}")]
     JsonError(#[from] serde_json::Error),
     #[error("Browser error: {0}")]
     BrowserError(#[from] crate::browser::BrowserError),
+    #[error("Claude client initialization error: {0}")] // Specific error for ClaudeClient::new()
+    ClaudeInitializationError(#[from] crate::claude::ClaudeError),
+}
+
+// Implement From<LlmError> for CrawlerError
+impl From<LlmError> for CrawlerError {
+    fn from(err: LlmError) -> Self {
+        CrawlerError::LlmError(err.to_string())
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -40,21 +52,25 @@ pub struct CrawlerResults {
 
 pub struct SmartCrawler {
     sitemap_parser: SitemapParser,
-    claude_client: ClaudeClient,
+    llm_client: Arc<dyn LLM + Send + Sync>, // Changed from claude_client: ClaudeClient
     browser: Browser,
     config: CrawlerConfig,
     scraped_urls: Arc<Mutex<HashMap<String, HashSet<String>>>>,
 }
 
 impl SmartCrawler {
-    pub async fn new(config: CrawlerConfig) -> Result<Self, CrawlerError> {
+    // Updated constructor to accept Arc<dyn LLM + Send + Sync>
+    pub async fn new(
+        config: CrawlerConfig,
+        llm_client: Arc<dyn LLM + Send + Sync>,
+    ) -> Result<Self, CrawlerError> {
         let sitemap_parser = SitemapParser::new();
-        let claude_client = ClaudeClient::new()?;
+        // ClaudeClient is no longer instantiated here
         let browser = Browser::new().await?;
 
         Ok(Self {
             sitemap_parser,
-            claude_client,
+            llm_client, // Use the passed llm_client
             browser,
             config,
             scraped_urls: Arc::new(Mutex::new(HashMap::new())),
@@ -174,13 +190,13 @@ impl SmartCrawler {
                 .collect()
         };
 
-        // Step 2: Use Claude to select relevant URLs
-        tracing::info!("Asking Claude to select relevant URLs for: {}", domain);
+        // Step 2: Use LLM to select relevant URLs
+        tracing::info!("Asking LLM to select relevant URLs for: {}", domain);
         let mut selected_urls = self
-            .claude_client
+            .llm_client // Changed from claude_client
             .select_urls(
                 &self.config.objective,
-                &urls_to_analyze,
+                &urls_to_analyze, // This is Vec<String>, fits &[String]
                 domain,
                 self.config.max_urls_per_domain,
             )
@@ -193,7 +209,7 @@ impl SmartCrawler {
                 .entry(domain.to_string())
                 .or_insert_with(HashSet::new);
 
-            selected_urls.retain(|url| {
+            selected_urls.retain(|url: &String| { // Added type annotation : &String
                 if domain_urls.contains(url) {
                     tracing::debug!("Skipping already scraped URL: {}", url);
                     false
@@ -216,7 +232,7 @@ impl SmartCrawler {
                 objective: self.config.objective.clone(),
                 selected_urls: Vec::new(),
                 scraped_content: Vec::new(),
-                analysis: vec!["No relevant URLs selected by Claude".to_string()],
+                analysis: vec!["No relevant URLs selected by LLM".to_string()], // Changed Claude to LLM
             });
         }
 
@@ -237,9 +253,9 @@ impl SmartCrawler {
                 Ok(content) => {
                     tracing::info!("Analyzing content from: {}", content.url);
 
-                    // Ask Claude to analyze the content
+                    // Ask LLM to analyze the content
                     match self
-                        .claude_client
+                        .llm_client // Changed from claude_client
                         .analyze_content(
                             &self.config.objective,
                             &content.url,
