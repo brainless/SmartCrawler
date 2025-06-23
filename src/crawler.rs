@@ -2,7 +2,7 @@ use crate::browser::Browser;
 // Remove direct ClaudeClient import, use LLM trait
 use crate::cli::CrawlerConfig;
 use crate::content::ScrapedContent;
-use crate::llm::{LLM, LlmError}; // Import LLM trait and LlmError
+use crate::llm::{LlmError, LLM}; // Import LLM trait and LlmError
 use crate::sitemap::SitemapParser;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -53,7 +53,6 @@ pub struct CrawlerResults {
 pub struct SmartCrawler {
     sitemap_parser: SitemapParser,
     llm_client: Arc<dyn LLM + Send + Sync>, // Changed from claude_client: ClaudeClient
-    browser: Browser,
     config: CrawlerConfig,
     scraped_urls: Arc<Mutex<HashMap<String, HashSet<String>>>>,
 }
@@ -65,13 +64,10 @@ impl SmartCrawler {
         llm_client: Arc<dyn LLM + Send + Sync>,
     ) -> Result<Self, CrawlerError> {
         let sitemap_parser = SitemapParser::new();
-        // ClaudeClient is no longer instantiated here
-        let browser = Browser::new().await?;
 
         Ok(Self {
             sitemap_parser,
             llm_client, // Use the passed llm_client
-            browser,
             config,
             scraped_urls: Arc::new(Mutex::new(HashMap::new())),
         })
@@ -137,6 +133,7 @@ impl SmartCrawler {
             sitemap_urls.len(),
             domain
         );
+        let browser = Browser::new().await?;
 
         let urls_to_analyze = if sitemap_urls.is_empty() {
             tracing::info!(
@@ -146,7 +143,7 @@ impl SmartCrawler {
             let root_url = format!("https://{}", domain);
 
             // Scrape the root URL to extract all links
-            match self.browser.scrape_url(&root_url).await {
+            match browser.scrape_url(&root_url).await {
                 Ok(scraped_content) => {
                     let mut discovered_urls = scraped_content.links;
 
@@ -165,8 +162,8 @@ impl SmartCrawler {
                     let mut unique_urls: std::collections::HashSet<String> =
                         discovered_urls.into_iter().collect();
                     unique_urls.insert(root_url.clone());
-
                     let final_urls: Vec<String> = unique_urls.into_iter().collect();
+
                     tracing::info!(
                         "Discovered {} URLs from root page of {}",
                         final_urls.len(),
@@ -190,6 +187,10 @@ impl SmartCrawler {
                 .collect()
         };
 
+        // Only retain URLs that are one level deeper
+        let urls_to_analyze =
+            select_urls_one_level_deeper(urls_to_analyze, format!("https://{}", domain));
+
         // Step 2: Use LLM to select relevant URLs
         tracing::info!("Asking LLM to select relevant URLs for: {}", domain);
         let mut selected_urls = self
@@ -209,7 +210,8 @@ impl SmartCrawler {
                 .entry(domain.to_string())
                 .or_insert_with(HashSet::new);
 
-            selected_urls.retain(|url: &String| { // Added type annotation : &String
+            selected_urls.retain(|url: &String| {
+                // Added type annotation : &String
                 if domain_urls.contains(url) {
                     tracing::debug!("Skipping already scraped URL: {}", url);
                     false
@@ -242,7 +244,8 @@ impl SmartCrawler {
             selected_urls.len(),
             domain
         );
-        let scrape_results = self.browser.scrape_multiple(&selected_urls).await;
+        let scrape_results = browser.scrape_multiple(&selected_urls).await;
+        browser.close().await?;
 
         let mut scraped_content = Vec::new();
         let mut analysis = Vec::new();
@@ -259,7 +262,7 @@ impl SmartCrawler {
                         .analyze_content(
                             &self.config.objective,
                             &content.url,
-                            &content.text_content,
+                            &content.content.to_prompt(),
                         )
                         .await
                     {
@@ -300,5 +303,245 @@ impl SmartCrawler {
             tracing::info!("Results saved to: {}", output_file);
         }
         Ok(())
+    }
+}
+
+/// Retains URLs that are one level deeper than the base_url, ignoring the scheme of the URLs and base_url
+///
+/// Examples:
+/// urls = ["https://example.com/level1/level2", "https://example.com/level1/level2/level3", "https://example.com/different-level1/level2/level3/level4"]
+/// base_url = "https://example.com"
+/// Output: ["https://example.com/level1", "https://example.com/different-level1"]
+///
+/// urls = ["https://example.com/different-level1/level2", "https://example.com/level1/level2/level3", "https://example.com/level1/level2/level3/level4"]
+/// base_url = "https://example.com/level1"
+/// Output: ["https://example.com/level1/level2"]
+fn select_urls_one_level_deeper<T: AsRef<str>>(urls: Vec<T>, base_url: T) -> Vec<String> {
+    let base_url_str = base_url.as_ref();
+
+    // Parse the base URL to get the path
+    let base_parsed = match url::Url::parse(base_url_str) {
+        Ok(parsed) => parsed,
+        Err(_) => return Vec::new(),
+    };
+
+    let base_domain = match base_parsed.host_str() {
+        Some(domain) => domain,
+        None => return Vec::new(),
+    };
+
+    let base_path = base_parsed.path().trim_end_matches('/');
+    let base_segments: Vec<&str> = if base_path.is_empty() || base_path == "/" {
+        Vec::new()
+    } else {
+        base_path.trim_start_matches('/').split('/').collect()
+    };
+
+    let mut result = Vec::new();
+    let mut seen = HashSet::new();
+
+    for url in urls {
+        let url_str = url.as_ref();
+
+        if let Ok(parsed_url) = url::Url::parse(url_str) {
+            // Check if URL is from the same domain
+            if let Some(url_domain) = parsed_url.host_str() {
+                if url_domain != base_domain && !url_domain.ends_with(&format!(".{}", base_domain))
+                {
+                    continue;
+                }
+
+                let url_path = parsed_url.path().trim_end_matches('/');
+                let url_segments: Vec<&str> = if url_path.is_empty() || url_path == "/" {
+                    Vec::new()
+                } else {
+                    url_path.trim_start_matches('/').split('/').collect()
+                };
+
+                // Check if URL starts with the base path and has at least one more segment
+                if url_segments.len() > base_segments.len() {
+                    let mut matches_base = true;
+                    for (i, base_segment) in base_segments.iter().enumerate() {
+                        if i >= url_segments.len() || url_segments[i] != *base_segment {
+                            matches_base = false;
+                            break;
+                        }
+                    }
+
+                    if matches_base {
+                        // Construct the URL that is one level deeper than base
+                        let mut one_level_deeper_segments = base_segments.clone();
+                        one_level_deeper_segments.push(url_segments[base_segments.len()]);
+
+                        let one_level_deeper_path = if one_level_deeper_segments.is_empty() {
+                            String::new()
+                        } else {
+                            format!("/{}", one_level_deeper_segments.join("/"))
+                        };
+
+                        let one_level_deeper_url = format!(
+                            "{}://{}{}",
+                            parsed_url.scheme(),
+                            parsed_url.host_str().unwrap_or(""),
+                            one_level_deeper_path
+                        );
+
+                        if seen.insert(one_level_deeper_url.clone()) {
+                            result.push(one_level_deeper_url);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::select_urls_one_level_deeper;
+
+    #[test]
+    fn test_select_urls_one_level_deeper() {
+        let urls = vec![
+            "https://example.com/level1/level2",
+            "https://example.com/level1/level2/level3",
+            "https://example.com/different-level1/level2/level3/level4",
+        ];
+        let base_url = "https://example.com";
+        let expected = vec![
+            "https://example.com/level1",
+            "https://example.com/different-level1",
+        ];
+        assert_eq!(select_urls_one_level_deeper(urls, base_url), expected);
+    }
+
+    #[test]
+    fn test_select_urls_one_level_deeper_with_base_url() {
+        let urls = vec![
+            "https://example.com/different-level1/level2",
+            "https://example.com/level1/level2/level3",
+            "https://example.com/level1/different-level2/level3/level4",
+        ];
+        let base_url = "https://example.com/level1";
+        let expected = vec![
+            "https://example.com/level1/level2",
+            "https://example.com/level1/different-level2",
+        ];
+        assert_eq!(select_urls_one_level_deeper(urls, base_url), expected);
+    }
+
+    #[test]
+    fn test_select_urls_one_level_deeper_empty_input() {
+        let urls: Vec<&str> = vec![];
+        let base_url = "https://example.com";
+        let expected: Vec<String> = vec![];
+        assert_eq!(select_urls_one_level_deeper(urls, base_url), expected);
+    }
+
+    #[test]
+    fn test_select_urls_one_level_deeper_invalid_base_url() {
+        let urls = vec!["https://example.com/page1"];
+        let base_url = "invalid-url";
+        let expected: Vec<String> = vec![];
+        assert_eq!(select_urls_one_level_deeper(urls, base_url), expected);
+    }
+
+    #[test]
+    fn test_select_urls_one_level_deeper_different_domains() {
+        let urls = vec![
+            "https://example.com/page1/subpage",
+            "https://otherdomain.com/page1/subpage",
+            "https://subdomain.example.com/page1/subpage",
+        ];
+        let base_url = "https://example.com";
+        let expected = vec![
+            "https://example.com/page1",
+            "https://subdomain.example.com/page1",
+        ];
+        assert_eq!(select_urls_one_level_deeper(urls, base_url), expected);
+    }
+
+    #[test]
+    fn test_select_urls_one_level_deeper_no_deeper_urls() {
+        let urls = vec!["https://example.com", "https://example.com/"];
+        let base_url = "https://example.com";
+        let expected: Vec<String> = vec![];
+        assert_eq!(select_urls_one_level_deeper(urls, base_url), expected);
+    }
+
+    #[test]
+    fn test_select_urls_one_level_deeper_root_base() {
+        let urls = vec![
+            "https://example.com/a/b/c",
+            "https://example.com/x/y/z",
+            "https://example.com/a/different",
+            "https://example.com/single",
+        ];
+        let base_url = "https://example.com";
+        let expected = vec![
+            "https://example.com/a",
+            "https://example.com/x",
+            "https://example.com/single",
+        ];
+        assert_eq!(select_urls_one_level_deeper(urls, base_url), expected);
+    }
+
+    #[test]
+    fn test_select_urls_one_level_deeper_with_query_params() {
+        let urls = vec![
+            "https://example.com/page1/subpage?param=value",
+            "https://example.com/page2/subpage#fragment",
+        ];
+        let base_url = "https://example.com";
+        let expected = vec!["https://example.com/page1", "https://example.com/page2"];
+        assert_eq!(select_urls_one_level_deeper(urls, base_url), expected);
+    }
+
+    #[test]
+    fn test_select_urls_one_level_deeper_deduplication() {
+        let urls = vec![
+            "https://example.com/page1/sub1",
+            "https://example.com/page1/sub2",
+            "https://example.com/page1/sub3",
+            "https://example.com/page2/sub1",
+        ];
+        let base_url = "https://example.com";
+        let expected = vec!["https://example.com/page1", "https://example.com/page2"];
+        assert_eq!(select_urls_one_level_deeper(urls, base_url), expected);
+    }
+
+    #[test]
+    fn test_select_urls_one_level_deeper_trailing_slashes() {
+        let urls = vec![
+            "https://example.com/page1/subpage/",
+            "https://example.com/page2/subpage",
+        ];
+        let base_url = "https://example.com/";
+        let expected = vec!["https://example.com/page1", "https://example.com/page2"];
+        assert_eq!(select_urls_one_level_deeper(urls, base_url), expected);
+    }
+
+    #[test]
+    fn test_select_urls_one_level_deeper_mixed_schemes() {
+        let urls = vec![
+            "https://example.com/page1/subpage",
+            "http://example.com/page2/subpage",
+        ];
+        let base_url = "https://example.com";
+        let expected = vec!["https://example.com/page1", "http://example.com/page2"];
+        assert_eq!(select_urls_one_level_deeper(urls, base_url), expected);
+    }
+
+    #[test]
+    fn test_select_urls_one_level_deeper_exact_match() {
+        let urls = vec![
+            "https://example.com/level1",        // Exact match with base
+            "https://example.com/level1/level2", // One level deeper
+        ];
+        let base_url = "https://example.com/level1";
+        let expected = vec!["https://example.com/level1/level2"];
+        assert_eq!(select_urls_one_level_deeper(urls, base_url), expected);
     }
 }

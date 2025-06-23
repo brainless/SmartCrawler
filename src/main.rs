@@ -1,19 +1,68 @@
+use dotenv::dotenv;
 use smart_crawler::{
-    cli::CrawlerConfig,
     claude::ClaudeClient, // Import ClaudeClient for instantiation
+    cli::{AppMode, CleanHtmlConfig, CrawlerConfig},
+    content::clean_html_file,
     crawler::SmartCrawler,
 };
 use std::sync::Arc; // Import Arc
 use tracing::{error, info};
 use tracing_subscriber;
-use dotenv::dotenv;
 
 #[tokio::main]
 async fn main() {
     dotenv().ok();
     // Parse command line arguments
-    let config = CrawlerConfig::from_args();
+    let app_mode = CrawlerConfig::from_args();
 
+    match app_mode {
+        AppMode::CleanHtml(clean_config) => {
+            handle_clean_html_mode(clean_config).await;
+        }
+        AppMode::Crawl(config) => {
+            handle_crawl_mode(config).await;
+        }
+    }
+}
+
+async fn handle_clean_html_mode(config: CleanHtmlConfig) {
+    // Initialize logging
+    if config.verbose {
+        tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::DEBUG)
+            .init();
+    } else {
+        tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::INFO)
+            .init();
+    }
+
+    // Validate configuration
+    if let Err(e) = config.validate() {
+        error!("Configuration error: {}", e);
+        std::process::exit(1);
+    }
+
+    info!("Starting HTML cleaning");
+    info!("Input file: {}", config.input_file);
+    info!("Output file: {}", config.output_file);
+
+    match clean_html_file(&config.input_file, &config.output_file) {
+        Ok(()) => {
+            info!("HTML cleaning completed successfully!");
+            println!("✅ HTML file cleaned successfully!");
+            println!("📄 Input:  {}", config.input_file);
+            println!("📄 Output: {}", config.output_file);
+        }
+        Err(e) => {
+            error!("HTML cleaning failed: {}", e);
+            eprintln!("❌ Error: {}", e);
+            std::process::exit(1);
+        }
+    }
+}
+
+async fn handle_crawl_mode(config: CrawlerConfig) {
     // Initialize logging
     if config.verbose {
         tracing_subscriber::fmt()
@@ -85,7 +134,12 @@ async fn main() {
                         if let Some(title) = &content.title {
                             println!("    Title: {}", title);
                         }
-                        let snippet = content.text_content.chars().take(200).collect::<String>();
+                        let snippet = content
+                            .content
+                            .to_prompt()
+                            .chars()
+                            .take(500)
+                            .collect::<String>();
                         println!("    Content Snippet: {}...", snippet);
                         if idx < result.scraped_content.len() - 1 {
                             println!("    {:-^40}", ""); // Separator between content items

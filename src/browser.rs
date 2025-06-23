@@ -1,7 +1,8 @@
-use crate::content::ScrapedContent;
-use fantoccini::{Client, ClientBuilder, Locator};
+use crate::content::{extract_structured_data, ScrapedContent};
+use fantoccini::{Client, ClientBuilder};
 use futures::future::join_all;
-use reqwest::Url;
+use scraper::{Html, Selector};
+use serde_json::Value;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -10,6 +11,10 @@ pub enum BrowserError {
     BrowserError(#[from] fantoccini::error::CmdError),
     #[error("New session error: {0}")]
     NewSessionError(#[from] fantoccini::error::NewSessionError),
+    #[error("HTML conversion error: {0}")]
+    ConversionError(String),
+    #[error("Content extraction error: {0}")]
+    DomContentExtractionError(#[from] dom_content_extraction::DomExtractionError),
 }
 
 pub struct Browser {
@@ -26,62 +31,35 @@ impl Browser {
 
     pub async fn scrape_url(&self, url: &str) -> Result<ScrapedContent, BrowserError> {
         self.client.goto(url).await?;
-        let _: () = self
+
+        let html = self
             .client
-            .wait()
-            .for_url(&Url::parse(url).unwrap())
+            .execute("return document.documentElement.outerHTML;", vec![])
             .await?;
-
-        let title = self.client.find(Locator::Css("title")).await?;
-        let title = title.text().await?;
-
-        let content_selectors = vec![
-            "main",
-            "article",
-            ".content",
-            ".main-content",
-            "#content",
-            "#main",
-            ".post-content",
-            ".entry-content",
-            "body",
-        ];
-
-        let mut text_content = String::new();
-
-        for selector_str in content_selectors {
-            if let Ok(element) = self.client.find(Locator::Css(selector_str)).await {
-                if let Ok(text) = element.text().await {
-                    // Remove script and style elements
-                    let text: String = text.split_whitespace().collect::<Vec<_>>().join(" ");
-
-                    if text.len() > text_content.len() {
-                        text_content = text;
-                    }
-                }
+        let html = match html {
+            Value::String(html) => html,
+            _ => {
+                return Err(BrowserError::ConversionError(
+                    "HTML conversion error".to_string(),
+                ))
             }
-        }
+        };
+        let scraper = Html::parse_document(&html);
 
-        // Fallback to body if no content found
-        if text_content.trim().is_empty() {
-            if let Ok(body_selector) = self.client.find(Locator::Css("body")).await {
-                if let Ok(body) = body_selector.text().await {
-                    text_content = body.split_whitespace().collect::<Vec<_>>().join(" ");
-                }
-            }
-        }
+        let title = scraper
+            .select(&Selector::parse("title").unwrap())
+            .next()
+            .unwrap()
+            .text()
+            .collect::<Vec<_>>()
+            .join(" ");
 
-        let links = self.client.find_all(Locator::Css("a[href]")).await?;
-        let links: Vec<String> = join_all(links.iter().map(|link| link.attr("href")))
-            .await
-            .iter()
-            .filter_map(|link| match link {
-                Ok(Some(href)) => Some(href.trim().to_string()),
-                Ok(None) => None,
-                Err(_) => None,
-            })
-            .collect();
+        let content = extract_structured_data(&html).await;
 
+        let links = scraper
+            .select(&Selector::parse("a[href]").unwrap())
+            .filter_map(|link| link.value().attr("href"))
+            .collect::<Vec<_>>();
         let links: Vec<String> = links
             .iter()
             .map(|href| {
@@ -102,32 +80,26 @@ impl Browser {
             })
             .collect();
 
-        let meta_description = self
-            .client
-            .find(Locator::Css("meta[name=\"description\"]"))
-            .await?;
-        let meta_description = meta_description.attr("content").await?;
+        let meta_description = scraper
+            .select(&Selector::parse("meta[name=\"description\"]").unwrap())
+            .filter_map(|meta| meta.value().attr("content"))
+            .collect::<Vec<_>>()
+            .join(" ");
 
-        let headings = self
-            .client
-            .find_all(Locator::Css("h1, h2, h3, h4, h5, h6"))
-            .await?;
-        let headings: Vec<String> = join_all(headings.iter().map(|heading| heading.text()))
-            .await
-            .iter()
-            .filter_map(|heading| match heading {
-                Ok(text) => Some(text.trim().to_string()),
-                Err(_) => None,
+        let headings = scraper
+            .select(&Selector::parse("h1, h2, h3, h4, h5, h6").unwrap())
+            .map(|heading| {
+                heading.text().collect::<Vec<_>>().join(" ").trim().to_string()
             })
             .filter(|heading| !heading.is_empty())
-            .collect();
+            .collect::<Vec<_>>();
 
         Ok(ScrapedContent {
             url: url.to_string(),
             title: Some(title),
-            text_content,
+            content,
             links,
-            meta_description: meta_description.map(|s| s.to_string()),
+            meta_description: Some(meta_description),
             headings,
         })
     }
@@ -137,5 +109,10 @@ impl Browser {
         urls: &[String],
     ) -> Vec<Result<ScrapedContent, BrowserError>> {
         join_all(urls.iter().map(|url| self.scrape_url(url))).await
+    }
+
+    pub async fn close(self) -> Result<(), BrowserError> {
+        self.client.close().await?;
+        Ok(())
     }
 }

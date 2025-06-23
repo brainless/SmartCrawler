@@ -12,6 +12,19 @@ pub struct CrawlerConfig {
     pub verbose: bool,
 }
 
+#[derive(Debug, Clone)]
+pub struct CleanHtmlConfig {
+    pub input_file: String,
+    pub output_file: String,
+    pub verbose: bool,
+}
+
+#[derive(Debug, Clone)]
+pub enum AppMode {
+    Crawl(CrawlerConfig),
+    CleanHtml(CleanHtmlConfig),
+}
+
 impl CrawlerConfig {
     pub fn add_domain(&self, domain: String) {
         let mut domains = self.domains.lock().unwrap();
@@ -19,18 +32,19 @@ impl CrawlerConfig {
             domains.push(domain);
         }
     }
-    pub fn from_args() -> Self {
+    pub fn from_args() -> AppMode {
         let matches = Command::new("smart-crawler")
             .version("1.0.0")
             .author("Smart Crawler")
             .about("Intelligent web crawler that uses Claude AI to select relevant URLs")
+            .subcommand_required(false)
             .arg(
                 Arg::new("objective")
                     .short('o')
                     .long("objective")
                     .value_name("OBJECTIVE")
                     .help("The crawling objective - what information to look for")
-                    .required(true)
+                    .required_unless_present("clean-html")
             )
             .arg(
                 Arg::new("domains")
@@ -38,7 +52,7 @@ impl CrawlerConfig {
                     .long("domains")
                     .value_name("DOMAINS")
                     .help("Comma-separated list of domains to crawl")
-                    .required(true)
+                    .required_unless_present("clean-html")
             )
             .arg(
                 Arg::new("max-urls")
@@ -63,6 +77,13 @@ impl CrawlerConfig {
                     .help("Output file for results (JSON format)")
             )
             .arg(
+                Arg::new("clean-html")
+                    .long("clean-html")
+                    .value_names(["INPUT_FILE", "OUTPUT_FILE"])
+                    .num_args(2)
+                    .help("Clean HTML file by removing unwanted elements and attributes. Usage: --clean-html <input.html> <output.html>")
+            )
+            .arg(
                 Arg::new("verbose")
                     .short('v')
                     .long("verbose")
@@ -71,6 +92,23 @@ impl CrawlerConfig {
             )
             .get_matches();
 
+        let verbose = matches.get_flag("verbose");
+
+        // Check if clean-html mode is requested
+        if let Some(clean_html_args) = matches.get_many::<String>("clean-html") {
+            let args: Vec<&String> = clean_html_args.collect();
+            if args.len() != 2 {
+                eprintln!("Error: --clean-html requires exactly 2 arguments: <input_file> <output_file>");
+                std::process::exit(1);
+            }
+            return AppMode::CleanHtml(CleanHtmlConfig {
+                input_file: args[0].clone(),
+                output_file: args[1].clone(),
+                verbose,
+            });
+        }
+
+        // Default crawl mode
         let objective = matches.get_one::<String>("objective").unwrap().clone();
         
         let domains_str = matches.get_one::<String>("domains").unwrap();
@@ -93,18 +131,34 @@ impl CrawlerConfig {
             .unwrap_or(1000);
 
         let output_file = matches.get_one::<String>("output").cloned();
-        let verbose = matches.get_flag("verbose");
 
-        CrawlerConfig {
+        AppMode::Crawl(CrawlerConfig {
             objective,
             domains: Arc::new(Mutex::new(domains)),
             max_urls_per_domain,
             delay_ms,
             output_file,
             verbose,
-        }
+        })
     }
 
+}
+
+impl CleanHtmlConfig {
+    pub fn validate(&self) -> Result<(), String> {
+        use std::path::Path;
+        
+        if !Path::new(&self.input_file).exists() {
+            return Err(format!("Input file does not exist: {}", self.input_file));
+        }
+        
+        // Note: We allow output files in any directory - the file operation will fail if directory doesn't exist
+        
+        Ok(())
+    }
+}
+
+impl CrawlerConfig {
     pub fn validate(&self) -> Result<(), String> {
         if self.objective.trim().is_empty() {
             return Err("Objective cannot be empty".to_string());
