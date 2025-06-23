@@ -27,8 +27,5 @@ pub trait LLM {
     /// Sends a message to the LLM and gets a response.
     /// Note: `ClaudeResponse` is used here. This might need generalization
     /// if other LLMs have significantly different response structures.
-    async fn send_message(
-        &self,
-        message: &str,
-    ) -> Result<ClaudeResponse, LlmError>;
+    async fn send_message(&self, message: &str) -> Result<ClaudeResponse, LlmError>;
 }

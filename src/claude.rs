@@ -1,4 +1,4 @@
-use crate::llm::{LLM, LlmError}; // Import LLM trait and LlmError
+use crate::llm::{LlmError, LLM}; // Import LLM trait and LlmError
 use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -75,8 +75,14 @@ impl ClaudeClient {
             .await?;
 
         if !response.status().is_success() {
-            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-            return Err(ClaudeError::ApiError(format!("API request failed: {}", error_text)));
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(ClaudeError::ApiError(format!(
+                "API request failed: {}",
+                error_text
+            )));
         }
 
         let claude_response: ClaudeResponse = response.json().await?;
@@ -110,7 +116,7 @@ Objective: {}
 Here are the available URLs:
 {}
 
-Please analyze these URLs and select the {} most relevant ones that would likely contain information related to the objective. 
+Please analyze these URLs and select the {} most relevant ones that would likely contain information related to the objective.
 
 IMPORTANT: You MUST only return URLs that are exactly from the list above. Do not modify, create, or suggest any new URLs.
 
@@ -129,10 +135,14 @@ Return ONLY a JSON array of the selected URLs that exist in the provided list, n
         );
 
         // Call the internal method that returns ClaudeError
-        let response = self.send_message_internal(&prompt).await
+        let response = self
+            .send_message_internal(&prompt)
+            .await
             .map_err(|e| Box::new(e) as LlmError)?;
-        
-        let content = response.content.first()
+
+        let content = response
+            .content
+            .first()
             .ok_or_else(|| ClaudeError::ApiError("No content in response".to_string()))
             .map_err(|e| Box::new(e) as LlmError)?;
 
@@ -142,14 +152,17 @@ Return ONLY a JSON array of the selected URLs that exist in the provided list, n
 
         // Create a set of valid URLs for fast lookup (using the input `url_list` for validation)
         let valid_urls_set: HashSet<String> = url_list.into_iter().collect();
-        
+
         // Filter out any URLs that are not in the original list
         let filtered_urls: Vec<String> = selected_urls_from_llm
             .into_iter()
             .filter(|url| {
                 let is_valid = valid_urls_set.contains(url);
                 if !is_valid {
-                    tracing::warn!("Claude returned URL not in original list, ignoring: {}", url);
+                    tracing::warn!(
+                        "Claude returned URL not in original list, ignoring: {}",
+                        url
+                    );
                 }
                 is_valid
             })
@@ -184,19 +197,25 @@ Keep the response concise but informative."#,
             content.chars().take(8000).collect::<String>()
         );
 
-        let response = self.send_message_internal(&prompt).await
+        let response = self
+            .send_message_internal(&prompt)
+            .await
             .map_err(|e| Box::new(e) as LlmError)?;
-        
-        let content_text = response.content.first()
+
+        let content_text = response
+            .content
+            .first()
             .ok_or_else(|| ClaudeError::ApiError("No content in response".to_string()))
             .map_err(|e| Box::new(e) as LlmError)?
-            .text.clone();
+            .text
+            .clone();
 
         Ok(content_text)
     }
 
     async fn send_message(&self, message: &str) -> Result<ClaudeResponse, LlmError> {
-        self.send_message_internal(message).await
+        self.send_message_internal(message)
+            .await
             .map_err(|e| Box::new(e) as LlmError)
     }
 }
