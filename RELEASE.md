@@ -182,7 +182,12 @@ The release script automatically updates all version references.
    - Check the Actions tab in GitHub repository
    - Common causes: test failures, dependency issues, missing secrets
 
-3. **Installer build failures**
+3. **Cross-compilation strip failures**
+   - Fixed in workflow: Uses appropriate strip tools for each target
+   - ARM64 Linux builds use `aarch64-linux-gnu-strip`
+   - Falls back gracefully if strip tool unavailable
+
+4. **Installer build failures**
    - Windows: WiX Toolset installation issues
    - macOS: create-dmg dependency problems
    - Linux: Missing system dependencies for cargo-deb/cargo-rpm
