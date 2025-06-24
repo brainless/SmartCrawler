@@ -1,0 +1,291 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'  # Trigger on version tags like v1.0.0
+  workflow_dispatch:  # Allow manual triggering
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+      version: ${{ steps.get_version.outputs.version }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for changelog generation
+          
+      - name: Get version from tag
+        id: get_version
+        run: |
+          if [[ $GITHUB_REF == refs/tags/* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/v}
+          else
+            VERSION="dev-$(git rev-parse --short HEAD)"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          
+      - name: Generate changelog
+        id: changelog
+        run: |
+          if [[ $GITHUB_REF == refs/tags/* ]]; then
+            # Get previous tag
+            PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+            if [ -n "$PREV_TAG" ]; then
+              CHANGELOG=$(git log --pretty=format:"- %s" $PREV_TAG..HEAD)
+            else
+              CHANGELOG=$(git log --pretty=format:"- %s" HEAD)
+            fi
+          else
+            CHANGELOG="Development build from commit $(git rev-parse --short HEAD)"
+          fi
+          
+          # Save changelog to file for multi-line output
+          cat > changelog.txt << 'EOF'
+          $CHANGELOG
+          EOF
+          
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref_name }}
+          release_name: SmartCrawler ${{ steps.get_version.outputs.version }}
+          body_path: changelog.txt
+          draft: false
+          prerelease: ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') }}
+
+  build-release:
+    name: Build Release
+    needs: create-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux x86_64
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            name: smart-crawler-linux-x64
+            archive: tar.gz
+            
+          # Linux ARM64
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            name: smart-crawler-linux-arm64
+            archive: tar.gz
+            
+          # macOS x86_64
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            name: smart-crawler-macos-x64
+            archive: tar.gz
+            
+          # macOS ARM64 (Apple Silicon)
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            name: smart-crawler-macos-arm64
+            archive: tar.gz
+            
+          # Windows x86_64
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            name: smart-crawler-windows-x64
+            archive: zip
+            extension: .exe
+
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+          
+      - name: Install cross-compilation tools (Linux ARM64)
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+          
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.target }}-cargo-
+            
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }} --verbose
+        
+      - name: Prepare binary
+        shell: bash
+        run: |
+          cd target/${{ matrix.target }}/release
+          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+            BINARY="smart-crawler.exe"
+          else
+            BINARY="smart-crawler"
+          fi
+          
+          # Strip binary on Unix systems
+          if [[ "${{ matrix.os }}" != "windows-latest" ]]; then
+            strip $BINARY
+          fi
+          
+          # Create archive
+          if [[ "${{ matrix.archive }}" == "zip" ]]; then
+            7z a ../../../${{ matrix.name }}-${{ needs.create-release.outputs.version }}.${{ matrix.archive }} $BINARY
+          else
+            tar czf ../../../${{ matrix.name }}-${{ needs.create-release.outputs.version }}.${{ matrix.archive }} $BINARY
+          fi
+          
+      - name: Upload Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: ${{ matrix.name }}-${{ needs.create-release.outputs.version }}.${{ matrix.archive }}
+          asset_name: ${{ matrix.name }}-${{ needs.create-release.outputs.version }}.${{ matrix.archive }}
+          asset_content_type: application/octet-stream
+
+  build-installers:
+    name: Build Native Installers
+    needs: [create-release, build-release]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Windows MSI installer
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            installer: msi
+            
+          # macOS DMG installer
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            installer: dmg
+            
+          # Linux DEB package
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            installer: deb
+            
+          # Linux RPM package  
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            installer: rpm
+
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+          
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.target }}-cargo-
+            
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }}
+        
+      # Windows MSI Installer
+      - name: Install WiX Toolset (Windows)
+        if: matrix.installer == 'msi'
+        run: |
+          Invoke-WebRequest -Uri "https://github.com/wixtoolset/wix3/releases/download/wix3112rtm/wix311-binaries.zip" -OutFile "wix311-binaries.zip"
+          Expand-Archive -Path "wix311-binaries.zip" -DestinationPath "wix311"
+          echo "$env:GITHUB_WORKSPACE\wix311" | Add-Content -Path $env:GITHUB_PATH
+          
+      - name: Install cargo-wix (Windows)
+        if: matrix.installer == 'msi'
+        run: cargo install cargo-wix
+        
+      - name: Build MSI installer
+        if: matrix.installer == 'msi'
+        run: |
+          cargo wix init
+          cargo wix --target ${{ matrix.target }} --output smart-crawler-${{ needs.create-release.outputs.version }}.msi
+          
+      # macOS DMG Installer
+      - name: Install create-dmg (macOS)
+        if: matrix.installer == 'dmg'
+        run: brew install create-dmg
+        
+      - name: Build DMG installer
+        if: matrix.installer == 'dmg'
+        run: |
+          mkdir -p dmg-contents
+          cp target/${{ matrix.target }}/release/smart-crawler dmg-contents/
+          create-dmg \
+            --volname "SmartCrawler" \
+            --window-pos 200 120 \
+            --window-size 800 400 \
+            --icon-size 100 \
+            --app-drop-link 600 185 \
+            "smart-crawler-${{ needs.create-release.outputs.version }}.dmg" \
+            "dmg-contents/"
+            
+      # Linux DEB Package
+      - name: Install cargo-deb (Linux DEB)
+        if: matrix.installer == 'deb'
+        run: cargo install cargo-deb
+        
+      - name: Build DEB package
+        if: matrix.installer == 'deb'
+        run: |
+          cargo deb --target ${{ matrix.target }}
+          cp target/${{ matrix.target }}/debian/*.deb smart-crawler-${{ needs.create-release.outputs.version }}.deb
+          
+      # Linux RPM Package
+      - name: Install cargo-rpm (Linux RPM)
+        if: matrix.installer == 'rpm'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rpm
+          cargo install cargo-rpm
+          
+      - name: Build RPM package
+        if: matrix.installer == 'rpm'
+        run: |
+          cargo rpm build --target ${{ matrix.target }}
+          cp target/${{ matrix.target }}/rpm/RPMS/x86_64/*.rpm smart-crawler-${{ needs.create-release.outputs.version }}.rpm
+          
+      - name: Upload Installer
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: smart-crawler-${{ needs.create-release.outputs.version }}.${{ matrix.installer }}
+          asset_name: smart-crawler-${{ needs.create-release.outputs.version }}.${{ matrix.installer }}
+          asset_content_type: application/octet-stream

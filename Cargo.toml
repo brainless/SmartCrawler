@@ -2,6 +2,55 @@
 name = "smart-crawler"
 version = "0.1.0"
 edition = "2021"
+authors = ["SmartCrawler Team"]
+description = "An intelligent web crawler that uses LLMs to make smart crawling decisions"
+license = "MIT"
+homepage = "https://github.com/brainless/SmartCrawler"
+repository = "https://github.com/brainless/SmartCrawler"
+keywords = ["crawler", "scraper", "llm", "ai", "web"]
+categories = ["command-line-utilities", "web-programming"]
+readme = "README.md"
+
+[package.metadata.deb]
+maintainer = "SmartCrawler Team"
+copyright = "2024, SmartCrawler Team"
+license-file = ["LICENSE", "4"]
+extended-description = """\
+SmartCrawler is an intelligent web crawler that leverages Large Language Models \
+to make smart decisions about which URLs to crawl based on crawling objectives. \
+It discovers sitemaps, analyzes content, and provides structured data extraction."""
+depends = "$auto"
+section = "utility"
+priority = "optional"
+assets = [
+    ["target/release/smart-crawler", "usr/bin/", "755"],
+    ["README.md", "usr/share/doc/smart-crawler/", "644"],
+]
+
+[package.metadata.rpm]
+package = "smart-crawler"
+version = "0.1.0"
+release = "1"
+epoch = 0
+license = "MIT"
+group = "Applications/Internet"
+summary = "An intelligent web crawler using LLMs"
+description = """\
+SmartCrawler is an intelligent web crawler that leverages Large Language Models \
+to make smart decisions about which URLs to crawl based on crawling objectives."""
+url = "https://github.com/brainless/SmartCrawler"
+
+[package.metadata.rpm.cargo]
+buildflags = ["--release"]
+
+[package.metadata.rpm.targets]
+smart-crawler = { path = "/usr/bin/smart-crawler" }
+
+[package.metadata.wix]
+upgrade-guid = "5C5C5C5C-5C5C-5C5C-5C5C-5C5C5C5C5C5C"
+path-guid = "6D6D6D6D-6D6D-6D6D-6D6D-6D6D6D6D6D6D"
+license = false
+eula = false
 
 [dependencies]
 tokio = { version = "1.0", features = ["full"] }
