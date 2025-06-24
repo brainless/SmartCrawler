@@ -256,6 +256,23 @@ jobs:
       - name: Build release binary
         run: cargo build --release --target ${{ matrix.target }}
         
+      - name: Verify binary exists
+        shell: bash
+        run: |
+          BINARY_PATH="target/${{ matrix.target }}/release/smart-crawler"
+          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+            BINARY_PATH="${BINARY_PATH}.exe"
+          fi
+          
+          if [ ! -f "$BINARY_PATH" ]; then
+            echo "Error: Binary not found at $BINARY_PATH"
+            ls -la target/${{ matrix.target }}/release/
+            exit 1
+          else
+            echo "✓ Binary found at $BINARY_PATH"
+            ls -la "$BINARY_PATH"
+          fi
+        
       # Windows MSI Installer
       - name: Install WiX Toolset (Windows)
         if: matrix.installer == 'msi'
@@ -271,8 +288,26 @@ jobs:
       - name: Build MSI installer
         if: matrix.installer == 'msi'
         run: |
-          cargo wix init
+          echo "Building MSI installer for ${{ matrix.target }}"
+          
+          # Initialize cargo-wix if no wix directory exists
+          if (!(Test-Path "wix")) {
+            echo "Initializing cargo-wix..."
+            cargo wix init --force
+          }
+          
+          # Build the MSI installer
+          echo "Building MSI package..."
           cargo wix --target ${{ matrix.target }} --output smart-crawler-${{ needs.create-release.outputs.version }}.msi
+          
+          # Verify the MSI was created
+          if (Test-Path "smart-crawler-${{ needs.create-release.outputs.version }}.msi") {
+            echo "✓ MSI installer created successfully"
+            Get-Item "smart-crawler-${{ needs.create-release.outputs.version }}.msi"
+          } else {
+            echo "Error: MSI installer not found"
+            exit 1
+          }
           
       # macOS DMG Installer
       - name: Install create-dmg (macOS)
@@ -282,16 +317,43 @@ jobs:
       - name: Build DMG installer
         if: matrix.installer == 'dmg'
         run: |
+          # Create DMG contents directory
           mkdir -p dmg-contents
           cp target/${{ matrix.target }}/release/smart-crawler dmg-contents/
+          
+          # Create a simple README for installation
+          cat > dmg-contents/INSTALL.txt << 'EOF'
+          SmartCrawler Installation
+          
+          To install SmartCrawler:
+          1. Copy the 'smart-crawler' binary to /usr/local/bin/
+          2. Make it executable: chmod +x /usr/local/bin/smart-crawler
+          3. Run from terminal: smart-crawler --help
+          EOF
+          
+          # Create DMG without app-drop-link (not needed for CLI tools)
+          echo "Creating DMG package..."
           create-dmg \
             --volname "SmartCrawler" \
             --window-pos 200 120 \
-            --window-size 800 400 \
-            --icon-size 100 \
-            --app-drop-link 600 185 \
+            --window-size 600 400 \
+            --icon-size 80 \
+            --hide-extension "smart-crawler" \
             "smart-crawler-${{ needs.create-release.outputs.version }}.dmg" \
-            "dmg-contents/"
+            "dmg-contents/" || {
+            echo "create-dmg failed, using fallback method..."
+            # Fallback: create simple DMG if create-dmg fails
+            hdiutil create -format UDZO -srcfolder dmg-contents "smart-crawler-${{ needs.create-release.outputs.version }}.dmg"
+          }
+          
+          # Verify the DMG was created
+          if [ -f "smart-crawler-${{ needs.create-release.outputs.version }}.dmg" ]; then
+            echo "✓ DMG package created successfully"
+            ls -la smart-crawler-${{ needs.create-release.outputs.version }}.dmg
+          else
+            echo "Error: DMG package not found"
+            exit 1
+          fi
             
       # Linux DEB Package
       - name: Install cargo-deb (Linux DEB)
@@ -301,8 +363,22 @@ jobs:
       - name: Build DEB package
         if: matrix.installer == 'deb'
         run: |
+          echo "Building DEB package for ${{ matrix.target }}"
+          
+          # Build the DEB package
           cargo deb --target ${{ matrix.target }}
+          
+          # Copy and verify the DEB package
           cp target/${{ matrix.target }}/debian/*.deb smart-crawler-${{ needs.create-release.outputs.version }}.deb
+          
+          if [ -f "smart-crawler-${{ needs.create-release.outputs.version }}.deb" ]; then
+            echo "✓ DEB package created successfully"
+            ls -la smart-crawler-${{ needs.create-release.outputs.version }}.deb
+          else
+            echo "Error: DEB package not found"
+            ls -la target/${{ matrix.target }}/debian/
+            exit 1
+          fi
           
       # Linux RPM Package
       - name: Install cargo-rpm (Linux RPM)
@@ -315,8 +391,29 @@ jobs:
       - name: Build RPM package
         if: matrix.installer == 'rpm'
         run: |
+          echo "Building RPM package for ${{ matrix.target }}"
+          
+          # Initialize cargo-rpm if no .rpm directory exists
+          if [ ! -d ".rpm" ]; then
+            echo "Initializing cargo-rpm..."
+            cargo rpm init
+          fi
+          
+          # Build the RPM package
+          echo "Building RPM package..."
           cargo rpm build --target ${{ matrix.target }}
+          
+          # Copy and verify the RPM package
           cp target/${{ matrix.target }}/rpm/RPMS/x86_64/*.rpm smart-crawler-${{ needs.create-release.outputs.version }}.rpm
+          
+          if [ -f "smart-crawler-${{ needs.create-release.outputs.version }}.rpm" ]; then
+            echo "✓ RPM package created successfully"
+            ls -la smart-crawler-${{ needs.create-release.outputs.version }}.rpm
+          else
+            echo "Error: RPM package not found"
+            ls -la target/${{ matrix.target }}/rpm/RPMS/x86_64/
+            exit 1
+          fi
           
       - name: Upload Installer
         env:
