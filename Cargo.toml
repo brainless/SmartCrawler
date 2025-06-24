@@ -3,13 +3,17 @@ name = "smart-crawler"
 version = "0.2.4"
 edition = "2021"
 authors = ["SmartCrawler Team"]
-description = "An intelligent web crawler that uses LLMs to make smart crawling decisions"
+description = "A smart web crawler that uses LLMs to make smart crawling decisions"
 license = "MIT"
 homepage = "https://github.com/brainless/SmartCrawler"
 repository = "https://github.com/brainless/SmartCrawler"
 keywords = ["crawler", "scraper", "llm", "ai", "web"]
 categories = ["command-line-utilities", "web-programming"]
 readme = "README.md"
+
+[[bin]]
+name = "smart-crawler"
+path = "src/main.rs"
 
 [package.metadata.deb]
 maintainer = "SmartCrawler Team"
@@ -23,7 +27,7 @@ depends = "$auto"
 section = "utility"
 priority = "optional"
 assets = [
-    ["target/release/smart-crawler", "usr/bin/", "755"],
+    ["target/x86_64-unknown-linux-gnu/release/smart-crawler", "usr/bin/", "755"],
     ["README.md", "usr/share/doc/smart-crawler/", "644"],
 ]
 

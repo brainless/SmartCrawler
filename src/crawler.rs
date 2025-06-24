@@ -139,7 +139,7 @@ impl SmartCrawler {
             .map(|u| u.as_ref().to_string())
             .collect();
 
-        let urls_found: Vec<String> = {
+        let urls_found_in_homepage: Vec<String> = {
             tracing::info!(
                 "No URLs found in sitemap for {}, scraping root URL for links",
                 domain
@@ -185,7 +185,7 @@ impl SmartCrawler {
                 }
             }
         };
-        urls_to_analyze.extend(urls_found);
+        urls_to_analyze.extend(urls_found_in_homepage);
 
         // Only retain URLs that are one level deeper
         let urls_to_analyze =

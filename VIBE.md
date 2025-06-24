@@ -88,3 +88,35 @@ GitHub issue #9 reported a failure in the GitHub Actions workflow during binary 
   - Windows: skip (not applicable)
 - Added error checking and informative logging
 - Updated RELEASE.md troubleshooting documentation
+
+## Missing Installer Packages Fix
+
+### User Request
+I cannot see the msi, dmg, deb or rpm files in the latest releases even though there are steps in the release.yml GitHub Actions workflow. Can you please check and fix?
+
+### Issue Analysis
+The release workflow includes a `build-installers` job but the installer packages are not appearing in GitHub releases. Potential causes:
+- Installer build job may be failing silently
+- Dependencies for installer tools may be missing
+- File paths or naming issues in the upload process
+- Job dependencies or matrix configuration problems
+
+### Task Plan
+1. Create new branch for installer packages fix
+2. Update VIBE.md with task details (this section)
+3. Investigate missing installer packages in releases:
+   - Review workflow logs for installer job failures
+   - Check installer build steps and dependencies
+   - Verify file paths and upload commands
+4. Fix installer build workflow issues:
+   - Ensure all installer tools are properly installed
+   - Fix any path or dependency issues
+   - Improve error handling and logging
+5. Test and commit the fixes
+
+### Expected Implementation
+- Verify and fix Windows MSI installer generation
+- Verify and fix macOS DMG package creation
+- Verify and fix Linux DEB package generation  
+- Verify and fix Linux RPM package generation
+- Ensure all packages upload correctly to releases
