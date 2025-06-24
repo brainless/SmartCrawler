@@ -197,6 +197,7 @@ jobs:
           fi
           
       - name: Upload Release Asset
+        shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -416,6 +417,7 @@ jobs:
           fi
           
       - name: Upload Installer
+        shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |

@@ -120,3 +120,34 @@ The release workflow includes a `build-installers` job but the installer package
 - Verify and fix Linux DEB package generation  
 - Verify and fix Linux RPM package generation
 - Ensure all packages upload correctly to releases
+
+## GitHub Actions PowerShell Syntax Fix - Issue #12
+
+### User Request
+Please check issue #12 on GitHub and see if you can fix it. Please use development workflow as in Claude.md
+
+### Issue Analysis
+GitHub issue #12 reports a GitHub Actions workflow failure with PowerShell syntax error:
+- Error: "Missing expression after unary operator '--'"
+- Occurs during "Build Release for Windows x64" job
+- Command: `gh release upload v0.2.5 \ ... --repo "brainless/SmartCrawler"`
+- Root cause: PowerShell multiline command continuation syntax issue
+
+### Task Plan
+1. Create new branch for GitHub issue #12 fix
+2. Update VIBE.md with task details (this section)
+3. Investigate PowerShell syntax error in release workflow:
+   - Examine the problematic gh release upload command
+   - Identify line continuation and escaping issues
+   - Check shell context (bash vs PowerShell)
+4. Fix the gh release upload command syntax:
+   - Ensure proper PowerShell multiline syntax
+   - Use correct shell for the command execution
+   - Test command syntax compatibility
+5. Test the fix and commit changes
+
+### Implementation Details
+- The error occurs because PowerShell interprets backslash differently than bash
+- Need to either use PowerShell-compatible line continuation or force bash shell
+- Will use explicit shell specification to ensure consistent behavior
+- May need to restructure the command for better cross-platform compatibility
