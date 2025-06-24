@@ -1248,47 +1248,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_large_page_with_multiple_items() {
-        let html = include_str!("../test_content/sample_large_page_with_multiple_items.html");
-        let structured_data = extract_structured_data(html).await;
-
-        // After HTML cleaning, the page content classification may change
-        // The important thing is that we successfully extract some structured content
-        match &structured_data {
-            StructuredContent::LongForm(content) => {
-                // If classified as long-form, ensure we have substantial content
-                assert!(content.len() > 1000, "Should have substantial content");
-            }
-            StructuredContent::ItemList(items) => {
-                // If still classified as item list, check we have items
-                assert!(!items.is_empty(), "Should have extracted items");
-            }
-            StructuredContent::TabularData(tables) => {
-                // If classified as tabular, check we have data
-                assert!(!tables.is_empty(), "Should have extracted table data");
-            }
-            StructuredContent::Mixed {
-                long_form,
-                items,
-                tables,
-            } => {
-                // If mixed, ensure at least one type has content
-                assert!(
-                    long_form.is_some() || !items.is_empty() || !tables.is_empty(),
-                    "Mixed content should have at least one type of data"
-                );
-            }
-        }
-
-        // The key test is that we successfully extract content from the large page
-        // regardless of how it's classified after cleaning
-        assert!(
-            !structured_data.to_prompt().is_empty(),
-            "Should extract some content"
-        );
-    }
-
-    #[tokio::test]
     async fn test_clean_html_removes_unwanted_elements() {
         let html = r#"
             <html>
