@@ -89,3 +89,9 @@ ANTHROPIC_API_KEY=your_key_here
 - The crawler can dynamically add domains during execution (though this feature isn't exposed via CLI)
 - Rate limiting is implemented via configurable delays between requests
 - Results are saved in structured JSON format for further analysis
+
+## Git Workflow
+- Create a new branch for each task. Branch names should start with chore/ or feature/ or fix/ etc.
+
+## Task Management Workflow
+- When starting a new task please save the user's request and task plan to VIBE.md

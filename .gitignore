@@ -44,3 +44,5 @@ output.json
 # Temporary files
 tmp/
 temp/
+
+test_content/output.html
