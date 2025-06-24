@@ -183,3 +183,35 @@ GitHub issue #14 reports a GitHub Actions workflow failure during DEB package bu
 - Required path: "target/release/smart-crawler"
 - cargo-deb will automatically handle cross-compilation target paths
 - This maintains compatibility while following cargo-deb best practices
+
+## Cargo-rpm File Path Fix - Issue #16
+
+### User Request
+Can you please check issue #16 on GitHub and see if you can fix it. Please use development workflow as in Claude.md
+
+### Issue Analysis
+GitHub issue #16 reports a GitHub Actions workflow failure during RPM package building:
+- Error: "cp: cannot stat 'target/x86_64-unknown-linux-gnu/rpm/RPMS/x86_64/*.rpm': No such file or directory"
+- Location: GitHub Actions workflow RPM build step
+- Root cause: cargo-rpm may not generate files in the expected target-specific path
+- Issue occurs when trying to copy the generated RPM file
+
+### Task Plan
+1. Create new branch for GitHub issue #16 fix
+2. Update VIBE.md with task details (this section)
+3. Investigate cargo-rpm build and file location issue:
+   - Examine the problematic file copy path in workflow
+   - Research cargo-rpm default output locations
+   - Understand how cargo-rpm handles cross-compilation paths
+4. Fix RPM package file path in GitHub Actions workflow:
+   - Update workflow to look in correct cargo-rpm output directory
+   - Add better error handling and file discovery
+   - Ensure compatibility with cargo-rpm behavior
+5. Test the fix and commit changes
+
+### Implementation Details
+- Current failing path: "target/x86_64-unknown-linux-gnu/rpm/RPMS/x86_64/*.rpm"
+- cargo-rpm likely generates files in "target/rpm/" or "target/generate-rpm/"
+- Need to investigate actual cargo-rpm output structure
+- Will add file discovery logic to handle different cargo-rpm versions
+- May need to use glob patterns or find commands for robustness

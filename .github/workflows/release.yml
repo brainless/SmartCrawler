@@ -404,15 +404,44 @@ jobs:
           echo "Building RPM package..."
           cargo rpm build --target ${{ matrix.target }}
           
-          # Copy and verify the RPM package
-          cp target/${{ matrix.target }}/rpm/RPMS/x86_64/*.rpm smart-crawler-${{ needs.create-release.outputs.version }}.rpm
+          # Find and copy the RPM package (cargo-rpm output location varies)
+          echo "Searching for generated RPM package..."
           
-          if [ -f "smart-crawler-${{ needs.create-release.outputs.version }}.rpm" ]; then
+          # List all possible locations for debugging
+          echo "Directory structure after build:"
+          find target/ -name "*.rpm" -type f 2>/dev/null || true
+          
+          # Try different common cargo-rpm output locations
+          RPM_FILE=""
+          
+          # Check standard RPM location
+          if [ -d "target/rpm/RPMS/x86_64" ] && [ "$(ls -A target/rpm/RPMS/x86_64/*.rpm 2>/dev/null)" ]; then
+            RPM_FILE=$(ls target/rpm/RPMS/x86_64/*.rpm | head -1)
+            echo "Found RPM in standard location: $RPM_FILE"
+          # Check generate-rpm location
+          elif [ -d "target/generate-rpm" ] && [ "$(ls -A target/generate-rpm/*.rpm 2>/dev/null)" ]; then
+            RPM_FILE=$(ls target/generate-rpm/*.rpm | head -1)
+            echo "Found RPM in generate-rpm location: $RPM_FILE"
+          # Check target/rpm directly
+          elif [ -d "target/rpm" ] && [ "$(ls -A target/rpm/*.rpm 2>/dev/null)" ]; then
+            RPM_FILE=$(ls target/rpm/*.rpm | head -1)
+            echo "Found RPM in target/rpm: $RPM_FILE"
+          else
+            # Use find as fallback to locate any .rpm file
+            RPM_FILE=$(find target/ -name "*.rpm" -type f | head -1)
+            if [ -n "$RPM_FILE" ]; then
+              echo "Found RPM using find: $RPM_FILE"
+            fi
+          fi
+          
+          if [ -n "$RPM_FILE" ] && [ -f "$RPM_FILE" ]; then
+            cp "$RPM_FILE" smart-crawler-${{ needs.create-release.outputs.version }}.rpm
             echo "✓ RPM package created successfully"
             ls -la smart-crawler-${{ needs.create-release.outputs.version }}.rpm
           else
-            echo "Error: RPM package not found"
-            ls -la target/${{ matrix.target }}/rpm/RPMS/x86_64/
+            echo "Error: RPM package not found in any expected location"
+            echo "Available files in target directory:"
+            find target/ -type f -name "*.rpm" 2>/dev/null || echo "No .rpm files found"
             exit 1
           fi
           
