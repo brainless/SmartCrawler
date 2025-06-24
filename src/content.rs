@@ -168,7 +168,7 @@ impl StructuredContent {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ScrapedContent {
+pub struct ScrapedWebPage {
     pub url: String,
     pub title: Option<String>,
     pub content: StructuredContent,
@@ -670,7 +670,7 @@ pub fn clean_html(html: &str) -> String {
         }
     }
 
-    // Clean up extra whitespace and empty lines first  
+    // Clean up extra whitespace and empty lines first
     let lines: Vec<&str> = cleaned_html
         .lines()
         .map(|line| line.trim())
@@ -684,63 +684,105 @@ pub fn clean_html(html: &str) -> String {
     let mut previous_length = 0;
     while cleaned_html.len() != previous_length {
         previous_length = cleaned_html.len();
-        
+
         // Remove self-closing empty tags that don't need to be preserved
         if let Ok(regex) = Regex::new(r"<(\w+)\s*/>") {
-            cleaned_html = regex.replace_all(&cleaned_html, |caps: &regex::Captures| {
-                let tag = &caps[1];
-                // Preserve certain self-closing tags even if empty
-                match tag {
-                    "br" | "hr" | "img" | "input" | "meta" | "link" | "area" | "base" | "col" | "embed" | "source" | "track" | "wbr" => caps.get(0).unwrap().as_str().to_string(),
-                    _ => String::new(), // Remove other empty self-closing tags
-                }
-            }).to_string();
+            cleaned_html = regex
+                .replace_all(&cleaned_html, |caps: &regex::Captures| {
+                    let tag = &caps[1];
+                    // Preserve certain self-closing tags even if empty
+                    match tag {
+                        "br" | "hr" | "img" | "input" | "meta" | "link" | "area" | "base"
+                        | "col" | "embed" | "source" | "track" | "wbr" => {
+                            caps.get(0).unwrap().as_str().to_string()
+                        }
+                        _ => String::new(), // Remove other empty self-closing tags
+                    }
+                })
+                .to_string();
         }
-        
+
         // Remove empty paired tags (no content between opening and closing tags)
         // Try different patterns to catch various empty tag formats
-        
+
         // Remove common empty tags individually (since backreferences don't work as expected)
         let empty_tag_patterns = [
-            r"<div></div>", r"<span></span>", r"<p></p>", r"<section></section>", 
-            r"<article></article>", r"<header></header>", r"<footer></footer>",
-            r"<aside></aside>", r"<main></main>", r"<nav></nav>", r"<figure></figure>",
-            r"<figcaption></figcaption>", r"<address></address>", r"<details></details>",
-            r"<summary></summary>", r"<mark></mark>", r"<small></small>",
-            r"<strong></strong>", r"<em></em>", r"<b></b>", r"<i></i>", r"<u></u>",
-            r"<s></s>", r"<del></del>", r"<ins></ins>", r"<sub></sub>", r"<sup></sup>",
-            r"<code></code>", r"<kbd></kbd>", r"<samp></samp>", r"<var></var>",
-            r"<pre></pre>", r"<blockquote></blockquote>", r"<cite></cite>",
-            r"<q></q>", r"<abbr></abbr>", r"<dfn></dfn>", r"<time></time>",
+            r"<div></div>",
+            r"<span></span>",
+            r"<p></p>",
+            r"<section></section>",
+            r"<article></article>",
+            r"<header></header>",
+            r"<footer></footer>",
+            r"<aside></aside>",
+            r"<main></main>",
+            r"<nav></nav>",
+            r"<figure></figure>",
+            r"<figcaption></figcaption>",
+            r"<address></address>",
+            r"<details></details>",
+            r"<summary></summary>",
+            r"<mark></mark>",
+            r"<small></small>",
+            r"<strong></strong>",
+            r"<em></em>",
+            r"<b></b>",
+            r"<i></i>",
+            r"<u></u>",
+            r"<s></s>",
+            r"<del></del>",
+            r"<ins></ins>",
+            r"<sub></sub>",
+            r"<sup></sup>",
+            r"<code></code>",
+            r"<kbd></kbd>",
+            r"<samp></samp>",
+            r"<var></var>",
+            r"<pre></pre>",
+            r"<blockquote></blockquote>",
+            r"<cite></cite>",
+            r"<q></q>",
+            r"<abbr></abbr>",
+            r"<dfn></dfn>",
+            r"<time></time>",
         ];
-        
+
         for pattern in &empty_tag_patterns {
             if let Ok(regex) = Regex::new(pattern) {
                 cleaned_html = regex.replace_all(&cleaned_html, "").to_string();
             }
         }
-        
+
         // Also remove empty tags with attributes
         let empty_tag_with_attrs_patterns = [
-            r"<div\s[^>]*></div>", r"<span\s[^>]*></span>", r"<p\s[^>]*></p>", 
-            r"<section\s[^>]*></section>", r"<article\s[^>]*></article>",
-            r"<header\s[^>]*></header>", r"<footer\s[^>]*></footer>",
-            r"<aside\s[^>]*></aside>", r"<main\s[^>]*></main>",
+            r"<div\s[^>]*></div>",
+            r"<span\s[^>]*></span>",
+            r"<p\s[^>]*></p>",
+            r"<section\s[^>]*></section>",
+            r"<article\s[^>]*></article>",
+            r"<header\s[^>]*></header>",
+            r"<footer\s[^>]*></footer>",
+            r"<aside\s[^>]*></aside>",
+            r"<main\s[^>]*></main>",
         ];
-        
+
         for pattern in &empty_tag_with_attrs_patterns {
             if let Ok(regex) = Regex::new(pattern) {
                 cleaned_html = regex.replace_all(&cleaned_html, "").to_string();
             }
         }
-        
-        // Remove tags that only contain whitespace  
+
+        // Remove tags that only contain whitespace
         let whitespace_tag_patterns = [
-            r"<div>\s+</div>", r"<span>\s+</span>", r"<p>\s+</p>", 
-            r"<section>\s+</section>", r"<article>\s+</article>",
-            r"<div\s[^>]*>\s+</div>", r"<span\s[^>]*>\s+</span>",
+            r"<div>\s+</div>",
+            r"<span>\s+</span>",
+            r"<p>\s+</p>",
+            r"<section>\s+</section>",
+            r"<article>\s+</article>",
+            r"<div\s[^>]*>\s+</div>",
+            r"<span\s[^>]*>\s+</span>",
         ];
-        
+
         for pattern in &whitespace_tag_patterns {
             if let Ok(regex) = Regex::new(pattern) {
                 cleaned_html = regex.replace_all(&cleaned_html, "").to_string();
@@ -763,23 +805,26 @@ pub fn clean_html(html: &str) -> String {
 /// # Examples
 /// ```rust,no_run
 /// use smart_crawler::content::clean_html_file;
-/// 
+///
 /// fn main() -> Result<(), Box<dyn std::error::Error>> {
 ///     // Clean an HTML file
 ///     clean_html_file("input.html", "output.html")?;
 ///     Ok(())
 /// }
 /// ```
-pub fn clean_html_file(input_path: &str, output_path: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub fn clean_html_file(
+    input_path: &str,
+    output_path: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
     // Read the input HTML file
     let html_content = std::fs::read_to_string(input_path)?;
-    
+
     // Clean the HTML
     let cleaned_html = clean_html(&html_content);
-    
+
     // Write the cleaned HTML to the output file
     std::fs::write(output_path, cleaned_html)?;
-    
+
     Ok(())
 }
 
@@ -1651,7 +1696,7 @@ mod tests {
         assert!(cleaned.contains("<br/>"));
         assert!(cleaned.contains("<hr/>"));
         assert!(cleaned.contains("<img"));
-        
+
         // Should remove empty div and span
         assert!(!cleaned.contains("<div></div>"));
         assert!(!cleaned.contains("<span></span>"));
@@ -1748,12 +1793,12 @@ mod tests {
         // But many nested empty divs should be gone
         assert!(cleaned.contains("<h1>Main Title</h1>"));
         assert!(cleaned.contains("<p>Some content</p>"));
-        
+
         // Empty sections should be removed (check that empty divs are gone)
         // After cleaning, we should not have standalone empty divs
         let empty_div_count = cleaned.matches("<div></div>").count();
         assert_eq!(empty_div_count, 0, "Should not contain any empty div tags");
-        
+
         // The main wrapper should remain as it contains actual content
         // (though its class attributes might be removed by other cleaning rules)
     }

@@ -186,12 +186,15 @@ Objective: {}
 Content (truncated if necessary):
 {}
 
-Please analyze this content and extract information relevant to the objective. Provide a clear, structured response with:
-1. Whether this page contains relevant information for the objective
-2. Key findings or extracted data
-3. Any actionable insights
+INSTRUCTIONS:
+1. First, determine if this page contains information that directly relates to the objective
+2. If the objective is NOT clearly met by the content, respond with exactly: "OBJECTIVE_NOT_MET"
+3. If the objective IS met, extract and return ONLY the specific information relevant to the objective
+4. Do not provide key findings, actionable insights, or additional analysis - only the relevant information itself
 
-Keep the response concise but informative."#,
+Response format:
+- If objective not met: "OBJECTIVE_NOT_MET"
+- If objective met: Only the relevant information from the content"#,
             url,
             objective,
             content.chars().take(8000).collect::<String>()
@@ -209,6 +212,14 @@ Keep the response concise but informative."#,
             .map_err(|e| Box::new(e) as LlmError)?
             .text
             .clone();
+
+        // Check if the objective was not met and return an error
+        if content_text.trim() == "OBJECTIVE_NOT_MET" {
+            return Err(Box::new(ClaudeError::ApiError(format!(
+                "Objective '{}' not clearly met in content from {}",
+                objective, url
+            ))) as LlmError);
+        }
 
         Ok(content_text)
     }

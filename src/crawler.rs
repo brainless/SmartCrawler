@@ -1,8 +1,7 @@
 use crate::browser::Browser;
-// Remove direct ClaudeClient import, use LLM trait
 use crate::cli::CrawlerConfig;
-use crate::content::ScrapedContent;
-use crate::llm::{LlmError, LLM}; // Import LLM trait and LlmError
+use crate::content::ScrapedWebPage;
+use crate::llm::{LlmError, LLM};
 use crate::sitemap::SitemapParser;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -39,7 +38,7 @@ pub struct CrawlResult {
     pub domain: String,
     pub objective: String,
     pub selected_urls: Vec<String>,
-    pub scraped_content: Vec<ScrapedContent>,
+    pub scraped_content: Vec<ScrapedWebPage>,
     pub analysis: Vec<String>,
 }
 
@@ -54,7 +53,7 @@ pub struct SmartCrawler {
     sitemap_parser: SitemapParser,
     llm_client: Arc<dyn LLM + Send + Sync>, // Changed from claude_client: ClaudeClient
     config: CrawlerConfig,
-    scraped_urls: Arc<Mutex<HashMap<String, HashSet<String>>>>,
+    urls_scraped: Arc<Mutex<HashMap<String, HashSet<String>>>>,
 }
 
 impl SmartCrawler {
@@ -69,7 +68,7 @@ impl SmartCrawler {
             sitemap_parser,
             llm_client, // Use the passed llm_client
             config,
-            scraped_urls: Arc::new(Mutex::new(HashMap::new())),
+            urls_scraped: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 
@@ -135,7 +134,12 @@ impl SmartCrawler {
         );
         let browser = Browser::new().await?;
 
-        let urls_to_analyze = if sitemap_urls.is_empty() {
+        let mut urls_to_analyze: Vec<String> = sitemap_urls
+            .iter()
+            .map(|u| u.as_ref().to_string())
+            .collect();
+
+        let urls_found: Vec<String> = {
             tracing::info!(
                 "No URLs found in sitemap for {}, scraping root URL for links",
                 domain
@@ -180,12 +184,8 @@ impl SmartCrawler {
                     vec![root_url]
                 }
             }
-        } else {
-            sitemap_urls
-                .iter()
-                .map(|u| u.as_ref().to_string())
-                .collect()
         };
+        urls_to_analyze.extend(urls_found);
 
         // Only retain URLs that are one level deeper
         let urls_to_analyze =
@@ -205,7 +205,7 @@ impl SmartCrawler {
 
         // Step 2.5: Filter out already scraped URLs and track unique URLs
         {
-            let mut scraped_urls = self.scraped_urls.lock().unwrap();
+            let mut scraped_urls = self.urls_scraped.lock().unwrap();
             let domain_urls = scraped_urls
                 .entry(domain.to_string())
                 .or_insert_with(HashSet::new);
@@ -238,54 +238,58 @@ impl SmartCrawler {
             });
         }
 
-        // Step 3: Scrape the selected URLs
+        // Step 3: Scrape the selected URLs one at a time
         tracing::info!(
             "Scraping {} selected URLs for {}",
             selected_urls.len(),
             domain
         );
-        let scrape_results = browser.scrape_multiple(&selected_urls).await;
-        browser.close().await?;
 
         let mut scraped_content = Vec::new();
         let mut analysis = Vec::new();
 
-        // Step 4: Analyze each scraped page with Claude
-        for (i, result) in scrape_results.into_iter().enumerate() {
-            match result {
-                Ok(content) => {
-                    tracing::info!("Analyzing content from: {}", content.url);
+        // Step 4: Scrape and analyze each URL sequentially
+        for url in &selected_urls {
+            match browser.scrape_url(url).await {
+                Ok(web_page) => {
+                    tracing::info!("Analyzing content from: {}", web_page.url);
 
                     // Ask LLM to analyze the content
                     match self
                         .llm_client // Changed from claude_client
                         .analyze_content(
                             &self.config.objective,
-                            &content.url,
-                            &content.content.to_prompt(),
+                            &web_page.url,
+                            &web_page.content.to_prompt(),
                         )
                         .await
                     {
                         Ok(analysis_result) => {
                             analysis.push(format!(
                                 "URL: {}\nAnalysis: {}",
-                                content.url, analysis_result
+                                web_page.url, analysis_result
                             ));
                         }
                         Err(e) => {
-                            tracing::warn!("Failed to analyze content from {}: {}", content.url, e);
-                            analysis.push(format!("URL: {}\nAnalysis failed: {}", content.url, e));
+                            tracing::warn!(
+                                "Failed to analyze content from {}: {}",
+                                web_page.url,
+                                e
+                            );
+                            analysis.push(format!("URL: {}\nAnalysis failed: {}", web_page.url, e));
                         }
                     }
 
-                    scraped_content.push(content);
+                    scraped_content.push(web_page);
                 }
                 Err(e) => {
-                    tracing::warn!("Failed to scrape URL {}: {}", selected_urls[i], e);
-                    analysis.push(format!("URL: {}\nScraping failed: {}", selected_urls[i], e));
+                    tracing::warn!("Failed to scrape URL {}: {}", url, e);
+                    analysis.push(format!("URL: {}\nScraping failed: {}", url, e));
                 }
             }
         }
+
+        browser.close().await?;
 
         Ok(CrawlResult {
             domain: domain.to_string(),

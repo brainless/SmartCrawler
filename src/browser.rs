@@ -1,6 +1,5 @@
-use crate::content::{extract_structured_data, ScrapedContent};
+use crate::content::{extract_structured_data, ScrapedWebPage};
 use fantoccini::{Client, ClientBuilder};
-use futures::future::join_all;
 use scraper::{Html, Selector};
 use serde_json::Value;
 use thiserror::Error;
@@ -29,7 +28,7 @@ impl Browser {
         Ok(Self { client })
     }
 
-    pub async fn scrape_url(&self, url: &str) -> Result<ScrapedContent, BrowserError> {
+    pub async fn scrape_url(&self, url: &str) -> Result<ScrapedWebPage, BrowserError> {
         self.client.goto(url).await?;
 
         let html = self
@@ -89,12 +88,17 @@ impl Browser {
         let headings = scraper
             .select(&Selector::parse("h1, h2, h3, h4, h5, h6").unwrap())
             .map(|heading| {
-                heading.text().collect::<Vec<_>>().join(" ").trim().to_string()
+                heading
+                    .text()
+                    .collect::<Vec<_>>()
+                    .join(" ")
+                    .trim()
+                    .to_string()
             })
             .filter(|heading| !heading.is_empty())
             .collect::<Vec<_>>();
 
-        Ok(ScrapedContent {
+        Ok(ScrapedWebPage {
             url: url.to_string(),
             title: Some(title),
             content,
@@ -102,13 +106,6 @@ impl Browser {
             meta_description: Some(meta_description),
             headings,
         })
-    }
-
-    pub async fn scrape_multiple(
-        &self,
-        urls: &[String],
-    ) -> Vec<Result<ScrapedContent, BrowserError>> {
-        join_all(urls.iter().map(|url| self.scrape_url(url))).await
     }
 
     pub async fn close(self) -> Result<(), BrowserError> {
