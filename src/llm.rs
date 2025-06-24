@@ -80,10 +80,7 @@ Return ONLY a JSON array of the selected URLs that exist in the provided list, n
             .filter(|url| {
                 let is_valid = valid_urls_set.contains(url);
                 if !is_valid {
-                    tracing::warn!(
-                        "LLM returned URL not in original list, ignoring: {}",
-                        url
-                    );
+                    tracing::warn!("LLM returned URL not in original list, ignoring: {}", url);
                 }
                 is_valid
             })
