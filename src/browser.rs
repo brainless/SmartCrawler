@@ -12,8 +12,8 @@ pub enum BrowserError {
     NewSessionError(#[from] fantoccini::error::NewSessionError),
     #[error("HTML conversion error: {0}")]
     ConversionError(String),
-    #[error("Content extraction error: {0}")]
-    DomContentExtractionError(#[from] dom_content_extraction::DomExtractionError),
+    #[error("IO error: {0}")]
+    IoError(#[from] std::io::Error),
 }
 
 pub struct Browser {
@@ -22,7 +22,7 @@ pub struct Browser {
 
 impl Browser {
     pub async fn new() -> Result<Self, BrowserError> {
-        let client = ClientBuilder::native()
+        let client = ClientBuilder::rustls()?
             .connect("http://localhost:4444")
             .await?;
         Ok(Self { client })
