@@ -151,3 +151,35 @@ GitHub issue #12 reports a GitHub Actions workflow failure with PowerShell synta
 - Need to either use PowerShell-compatible line continuation or force bash shell
 - Will use explicit shell specification to ensure consistent behavior
 - May need to restructure the command for better cross-platform compatibility
+
+## Cargo-deb Asset Path Fix - Issue #14
+
+### User Request
+Can you please check issue #14 on GitHub and see if you can fix it. Please use development workflow as in Claude.md
+
+### Issue Analysis
+GitHub issue #14 reports a GitHub Actions workflow failure during DEB package building:
+- Error: "TOML parse error at line 29, column 10"
+- Message: "Please only use `target/release` path prefix for built products"
+- Location: `Cargo.toml` DEB package configuration
+- Root cause: Using hardcoded cross-compilation path instead of standard path
+
+### Task Plan
+1. Create new branch for GitHub issue #14 fix
+2. Update VIBE.md with task details (this section)
+3. Investigate cargo-deb TOML parse error:
+   - Examine the problematic asset path in Cargo.toml
+   - Understand cargo-deb path requirements
+   - Identify cross-compilation compatibility issues
+4. Fix DEB package asset path in Cargo.toml:
+   - Change from target-specific path to standard target/release
+   - Let cargo-deb handle cross-compilation paths automatically
+   - Ensure compatibility with GitHub Actions workflow
+5. Test the fix and commit changes
+
+### Implementation Details
+- The issue is in the [package.metadata.deb] assets configuration
+- Current path: "target/x86_64-unknown-linux-gnu/release/smart-crawler"
+- Required path: "target/release/smart-crawler"
+- cargo-deb will automatically handle cross-compilation target paths
+- This maintains compatibility while following cargo-deb best practices

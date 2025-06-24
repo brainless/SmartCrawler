@@ -27,7 +27,7 @@ depends = "$auto"
 section = "utility"
 priority = "optional"
 assets = [
-    ["target/x86_64-unknown-linux-gnu/release/smart-crawler", "usr/bin/", "755"],
+    ["target/release/smart-crawler", "usr/bin/", "755"],
     ["README.md", "usr/share/doc/smart-crawler/", "644"],
 ]
 

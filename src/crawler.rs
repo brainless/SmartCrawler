@@ -203,6 +203,13 @@ impl SmartCrawler {
             )
             .await?;
 
+        return Ok(CrawlResult {
+            domain: domain.to_string(),
+            objective: self.config.objective.clone(),
+            selected_urls,
+            scraped_content: Vec::new(),
+            analysis: Vec::new(),
+        });
         // Step 2.5: Filter out already scraped URLs and track unique URLs
         {
             let mut scraped_urls = self.urls_scraped.lock().unwrap();
