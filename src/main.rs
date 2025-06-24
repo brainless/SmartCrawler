@@ -94,6 +94,10 @@ async fn handle_crawl_mode(config: CrawlerConfig) {
         }
     };
 
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("Failed to install rustls crypto provider");
+
     // Create and run crawler
     // Pass Arc<ClaudeClient> to SmartCrawler::new
     let crawler = match SmartCrawler::new(config, Arc::new(claude_client)).await {
