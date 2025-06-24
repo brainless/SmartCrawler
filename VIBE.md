@@ -215,3 +215,36 @@ GitHub issue #16 reports a GitHub Actions workflow failure during RPM package bu
 - Need to investigate actual cargo-rpm output structure
 - Will add file discovery logic to handle different cargo-rpm versions
 - May need to use glob patterns or find commands for robustness
+
+## Crawler Improvements Implementation - Issue #19
+
+### User Request
+Can you please check ideas in #19 on GitHub and implement them. Please use development workflow as in Claude.md
+
+### Issue Analysis
+GitHub issue #19 suggests several improvements to enhance the SmartCrawler's URL handling and LLM interaction:
+
+1. **URL Tracking Enhancement**: Track URLs per domain storing only path and query parameters
+2. **LLM Interaction Improvement**: Send only path/query to LLM, handle domain separately
+3. **Objective-based URL Expansion**: Add URLs matching original objective words after filtering
+
+### Task Plan
+1. Create new branch for GitHub issue #19 improvements
+2. Update VIBE.md with task details (this section)
+3. Implement URL tracking improvements in SmartCrawler:
+   - Modify URL storage to track path+query per domain
+   - Update deduplication logic for improved efficiency
+4. Update LLM prompt to handle domain separately:
+   - Modify LLM trait default implementation
+   - Update prompt to receive domain context separately from URL paths
+5. Add objective-based URL expansion logic:
+   - Implement keyword matching against objective
+   - Add URLs that match objective terms after select_urls_one_level_deeper
+6. Test and commit the improvements
+
+### Implementation Details
+- URL storage: Use HashMap<String, HashSet<String>> where key=domain, value=path+query
+- LLM prompt: Pass domain context separately, send clean path/query list
+- Objective matching: Parse objective for keywords, match against URL paths
+- Performance: Reduce memory usage by storing partial URLs instead of full URLs
+- Accuracy: Improve LLM decisions with cleaner, domain-contextualized prompts

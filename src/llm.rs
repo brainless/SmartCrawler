@@ -1,6 +1,5 @@
 use crate::claude::ClaudeResponse; // Assuming ClaudeResponse might be generalized later
 use async_trait::async_trait;
-use std::collections::HashSet; // Added for default select_urls implementation
 use thiserror::Error; // Added for custom errors within default impls
 
 /// Generic error type for LLM operations.
@@ -34,30 +33,49 @@ pub trait LLM {
 
         tracing::info!("URLs provided to LLM for selection: {:?}", url_list);
 
+        // Extract path+query for each URL for more focused analysis (improvement from issue #19)
+        let url_paths: Vec<String> = url_list
+            .iter()
+            .enumerate()
+            .map(|(i, url)| {
+                if let Ok(parsed) = url::Url::parse(url) {
+                    let mut path_query = parsed.path().to_string();
+                    if let Some(query) = parsed.query() {
+                        path_query.push('?');
+                        path_query.push_str(query);
+                    }
+                    format!("{}: {}", i + 1, path_query)
+                } else {
+                    format!("{}: {}", i + 1, url)
+                }
+            })
+            .collect();
+
         let prompt = format!(
             r#"You are helping a web crawler select the most relevant URLs to crawl for a specific objective.
 
 Domain: {}
 Objective: {}
 
-Here are the available URLs:
+Here are the available URL paths on this domain (numbered for reference):
 {}
 
-Please analyze these URLs and select the {} most relevant ones that would likely contain information related to the objective.
+Please analyze these URL paths and select the {} most relevant ones that would likely contain information related to the objective.
 
-IMPORTANT: You MUST only return URLs that are exactly from the list above. Do not modify, create, or suggest any new URLs.
+Focus on:
+1. Path structure and directory names that suggest relevant content
+2. File names and extensions that indicate relevant page types
+3. Query parameters that suggest dynamic content matching the objective
+4. Depth and specificity - prefer focused pages over general ones
+5. Avoid redundant or overly similar paths
 
-Consider:
-1. URL structure and path names that suggest relevant content
-2. Likely page types (product pages, articles, documentation, etc.)
-3. Depth and specificity of URLs
-4. Avoid redundant or overly similar URLs
+IMPORTANT: Return ONLY the numbers (1, 2, 3, etc.) of the selected paths as a JSON array.
+Example format: [1, 3, 7, 12]
 
-Return ONLY a JSON array of the selected URLs that exist in the provided list, nothing else. Example format:
-["https://example.com/page1", "https://example.com/page2"]"#,
+Selected path numbers:"#,
             domain,
             objective,
-            url_list.join("\n"),
+            url_paths.join("\n"),
             max_urls.min(20) // Conservative limit
         );
 
@@ -68,24 +86,28 @@ Return ONLY a JSON array of the selected URLs that exist in the provided list, n
             .first()
             .ok_or_else(|| Box::new(DefaultLlmImplError::NoContentInResponse) as LlmError)?;
 
-        let selected_urls_from_llm: Vec<String> = serde_json::from_str(&content_block.text)
+        // Parse the response as array of numbers (improvement from issue #19)
+        let selected_indices: Vec<usize> = serde_json::from_str(&content_block.text)
             .map_err(|e| Box::new(DefaultLlmImplError::JsonParseFailed(e)) as LlmError)?;
 
-        // Create a set of valid URLs for fast lookup (using the input `url_list` for validation)
-        let valid_urls_set: HashSet<String> = url_list.into_iter().collect();
-
-        // Filter out any URLs that are not in the original list
-        let filtered_urls: Vec<String> = selected_urls_from_llm
+        // Convert indices back to URLs
+        let filtered_urls: Vec<String> = selected_indices
             .into_iter()
-            .filter(|url| {
-                let is_valid = valid_urls_set.contains(url);
-                if !is_valid {
-                    tracing::warn!("LLM returned URL not in original list, ignoring: {}", url);
+            .filter_map(|index| {
+                if index > 0 && index <= url_list.len() {
+                    Some(url_list[index - 1].clone()) // Convert 1-based to 0-based indexing
+                } else {
+                    tracing::warn!("LLM returned invalid index {}, ignoring", index);
+                    None
                 }
-                is_valid
             })
             .collect();
 
+        tracing::info!(
+            "LLM selected {} URLs from {} candidates",
+            filtered_urls.len(),
+            url_list.len()
+        );
         Ok(filtered_urls)
     }
 
@@ -129,7 +151,7 @@ Response format:
             .clone();
 
         // Check if the objective was not met and return an error
-        if content_text.trim() == "OBJECTIVE_NOT_MET" {
+        if content_text.contains("OBJECTIVE_NOT_MET") {
             return Err(Box::new(DefaultLlmImplError::ObjectiveNotMet(format!(
                 "Objective '{}' not clearly met in content from {}",
                 objective, url

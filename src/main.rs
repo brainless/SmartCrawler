@@ -128,27 +128,6 @@ async fn handle_crawl_mode(config: CrawlerConfig) {
                     println!("- {}", analysis_item);
                 }
 
-                println!("\n{:-^50}", " SCRAPED CONTENT DETAILS ");
-                if result.scraped_content.is_empty() {
-                    println!("No content scraped for this domain.");
-                } else {
-                    for (idx, content) in result.scraped_content.iter().enumerate() {
-                        println!("\n[{}] URL: {}", idx + 1, content.url);
-                        if let Some(title) = &content.title {
-                            println!("    Title: {}", title);
-                        }
-                        let snippet = content
-                            .content
-                            .to_prompt()
-                            .chars()
-                            .take(500)
-                            .collect::<String>();
-                        println!("    Content Snippet: {}...", snippet);
-                        if idx < result.scraped_content.len() - 1 {
-                            println!("    {:-^40}", ""); // Separator between content items
-                        }
-                    }
-                }
                 println!("{:-^50}", "");
             }
 
