@@ -1,120 +1,303 @@
-# Smart Crawler
+# SmartCrawler
 
-A smart crawler that uses LLMs to select the most relevant URLs from website sitemaps based on crawling objectives.
+A smart web crawler that uses AI to intelligently select and analyze web pages based on your specific objectives. SmartCrawler automatically discovers sitemaps, selects the most relevant URLs using Claude AI, and provides detailed analysis of the content it finds.
 
-## Features
+## 📋 Table of Contents
 
-- **Sitemap Discovery**: Automatically finds and parses XML sitemaps for any domain
-- **AI-Powered URL Selection**: Uses Claude to intelligently select relevant URLs based on objectives
-- **Conservative Crawling**: Implements rate limiting and respectful crawling practices
-- **Content Analysis**: Leverages Claude to analyze scraped content for objective-specific insights
-- **Multi-Domain Support**: Crawl multiple domains in a single session
-- **Structured Output**: Results saved in JSON format for further analysis
+- [Features](#features)
+- [Quick Start](#quick-start)
+- [Installation](#installation)
+- [WebDriver Setup](#webdriver-setup)
+- [Usage](#usage)
+- [Examples](#examples)
+- [Configuration](#configuration)
+- [Troubleshooting](#troubleshooting)
+- [License](#license)
 
-## Prerequisites
+## ✨ Features
 
-- Rust 1.70+ installed
-- Anthropic API key (Claude)
+- **🤖 AI-Powered URL Selection**: Uses Claude AI to intelligently select relevant URLs from sitemaps
+- **🗺️ Automatic Sitemap Discovery**: Finds and parses XML sitemaps across multiple domains
+- **📄 Smart Content Analysis**: AI-powered analysis of scraped content for objective-specific insights
+- **🌐 Multi-Domain Support**: Crawl multiple websites in a single session
+- **⚡ Dynamic Content Loading**: Scrolls through pages to capture JavaScript-rendered content
+- **📊 Structured Output**: Results saved in JSON format for further analysis
+- **🛡️ Respectful Crawling**: Built-in rate limiting and respectful crawling practices
 
-## Installation
+## 🚀 Quick Start
 
-1. Clone the repository:
+1. **Download SmartCrawler** from the [releases page](https://github.com/brainless/SmartCrawler/releases)
+2. **Set up WebDriver** (Firefox or Chrome)
+3. **Get Claude API key** from [Anthropic](https://console.anthropic.com/)
+4. **Run SmartCrawler** with your objective
+
+## 📦 Installation
+
+### Option 1: Download Pre-built Binary (Recommended)
+
+**Windows:**
+1. Download `smart-crawler-windows-x64.zip` from [releases](https://github.com/brainless/SmartCrawler/releases)
+2. Extract the ZIP file to a folder (e.g., `C:\SmartCrawler\`)
+3. Add the folder to your PATH or run from the folder directly
+
+**macOS:**
+1. Download `smart-crawler-macos-x64.tar.gz` (Intel) or `smart-crawler-macos-arm64.tar.gz` (Apple Silicon)
+2. Extract: `tar -xzf smart-crawler-macos-*.tar.gz`
+3. Move to applications: `sudo mv smart-crawler /usr/local/bin/`
+4. Make executable: `chmod +x /usr/local/bin/smart-crawler`
+
+**Linux:**
+1. Download `smart-crawler-linux-x64.tar.gz`
+2. Extract: `tar -xzf smart-crawler-linux-x64.tar.gz`
+3. Move to bin: `sudo mv smart-crawler /usr/local/bin/`
+4. Make executable: `chmod +x /usr/local/bin/smart-crawler`
+
+### Option 2: Package Installers
+
+**Windows MSI Installer:**
+1. Download `smart-crawler-[version].msi` from releases
+2. Double-click to install
+3. SmartCrawler will be available in your PATH
+
+**Linux DEB Package (Ubuntu/Debian):**
 ```bash
-git clone <repository-url>
-cd smart-crawler
+wget https://github.com/brainless/SmartCrawler/releases/latest/download/smart-crawler-[version].deb
+sudo dpkg -i smart-crawler-[version].deb
 ```
 
-2. Build the project:
+**Linux RPM Package (RHEL/CentOS/Fedora):**
 ```bash
+wget https://github.com/brainless/SmartCrawler/releases/latest/download/smart-crawler-[version].rpm
+sudo rpm -i smart-crawler-[version].rpm
+```
+
+**macOS DMG:**
+1. Download `smart-crawler-[version].dmg` from releases
+2. Open the DMG and copy `smart-crawler` to `/usr/local/bin/`
+
+### Option 3: Build from Source
+
+If you have Rust installed:
+```bash
+git clone https://github.com/brainless/SmartCrawler.git
+cd SmartCrawler
 cargo build --release
+# Binary will be in target/release/smart-crawler
 ```
 
-## Usage
+## 🌐 WebDriver Setup
 
-### Set up your Anthropic API key:
+SmartCrawler requires a WebDriver to control a browser for scraping. Choose one:
+
+### Firefox (GeckoDriver) - Recommended
+
+**Windows:**
+1. Download `geckodriver.exe` from [Mozilla releases](https://github.com/mozilla/geckodriver/releases)
+2. Place in a folder in your PATH or the same folder as SmartCrawler
+3. Install Firefox browser if not already installed
+
+**macOS:**
+```bash
+# Using Homebrew (recommended)
+brew install geckodriver
+
+# Or download manually from releases page
+```
+
+**Linux:**
+```bash
+# Ubuntu/Debian
+sudo apt update
+sudo apt install firefox-esr
+wget https://github.com/mozilla/geckodriver/releases/latest/download/geckodriver-v0.33.0-linux64.tar.gz
+tar -xzf geckodriver-v0.33.0-linux64.tar.gz
+sudo mv geckodriver /usr/local/bin/
+
+# RHEL/CentOS/Fedora
+sudo dnf install firefox
+# Then download geckodriver as above
+```
+
+### Chrome (ChromeDriver) - Alternative
+
+**Windows:**
+1. Download ChromeDriver from [Chrome for Testing](https://googlechromelabs.github.io/chrome-for-testing/)
+2. Place `chromedriver.exe` in your PATH or SmartCrawler folder
+3. Install Chrome browser if not already installed
+
+**macOS:**
+```bash
+# Using Homebrew
+brew install chromedriver
+
+# Or download manually
+```
+
+**Linux:**
+```bash
+# Ubuntu/Debian
+sudo apt update
+sudo apt install google-chrome-stable
+wget https://chromedriver.storage.googleapis.com/[VERSION]/chromedriver_linux64.zip
+unzip chromedriver_linux64.zip
+sudo mv chromedriver /usr/local/bin/
+
+# Check Chrome version: google-chrome --version
+# Download matching ChromeDriver version
+```
+
+## 🎯 Usage
+
+### 1. Set up your Claude API key
+
+**Windows (Command Prompt):**
+```cmd
+set ANTHROPIC_API_KEY=your-api-key-here
+```
+
+**Windows (PowerShell):**
+```powershell
+$env:ANTHROPIC_API_KEY="your-api-key-here"
+```
+
+**macOS/Linux:**
 ```bash
 export ANTHROPIC_API_KEY="your-api-key-here"
 ```
 
-### Run the crawler:
+### 2. Start WebDriver
+
+**For Firefox (GeckoDriver):**
 ```bash
-cargo run -- --objective "Find pricing information" --domains "example.com,another-site.com" --max-urls 5
+# Windows
+geckodriver.exe --port 4444
+
+# macOS/Linux  
+geckodriver --port 4444
 ```
 
-### Command-line options:
-```
--o, --objective <OBJECTIVE>    The crawling objective - what information to look for [required]
--d, --domains <DOMAINS>        Comma-separated list of domains to crawl [required]
--m, --max-urls <NUMBER>        Maximum URLs to crawl per domain [default: 10]
-    --delay <MILLISECONDS>     Delay between requests in milliseconds [default: 1000]
--O, --output <FILE>           Output file for results (JSON format)
--v, --verbose                 Enable verbose logging
-```
-
-### Example Usage:
-
+**For Chrome (ChromeDriver):**
 ```bash
-# Look for pricing information on multiple e-commerce sites
-cargo run -- -o "Find product pricing and discount information" -d "shop1.com,shop2.com" -m 8 --output results.json
+# Windows
+chromedriver.exe --port=4444
 
-# Research company information
-cargo run -- -o "Find company contact information and team details" -d "company.com" -m 5 -v
-
-# Technical documentation search
-cargo run -- -o "Find API documentation and integration guides" -d "api-docs.com,developer-site.com" -m 15
+# macOS/Linux
+chromedriver --port=4444
 ```
 
-## How it Works
+### 3. Run SmartCrawler
 
-1. **Sitemap Discovery**: For each domain, the crawler:
-   - Checks common sitemap locations (`/sitemap.xml`, `/sitemap_index.xml`, etc.)
-   - Parses `robots.txt` for sitemap references
-   - Handles both regular sitemaps and sitemap indexes
+**Basic usage:**
+```bash
+smart-crawler --objective "Find pricing information" --domains "example.com" --max-urls 5
+```
 
-2. **AI URL Selection**: Claude AI analyzes all discovered URLs and selects the most relevant ones based on:
-   - URL structure and naming patterns
-   - Likely content types
-   - Relevance to the specified objective
+**With output file:**
+```bash
+smart-crawler -o "Find contact information" -d "company.com,business.org" -m 10 -O results.json
+```
 
-3. **Content Scraping**: The crawler:
-   - Respects rate limits with configurable delays
-   - Extracts clean text content, titles, and metadata
-   - Handles various HTML structures intelligently
+**Command-line options:**
+```
+-o, --objective <OBJECTIVE>    What information to look for [REQUIRED]
+-d, --domains <DOMAINS>        Comma-separated domains to crawl [REQUIRED]
+-m, --max-urls <NUMBER>        Maximum URLs per domain [default: 10]
+    --delay <MILLISECONDS>     Delay between requests [default: 1000]
+-O, --output <FILE>           Save results to JSON file
+-v, --verbose                 Enable detailed logging
+```
 
-4. **AI Content Analysis**: Claude analyzes each scraped page to:
-   - Determine relevance to the objective
-   - Extract key information and insights
-   - Provide structured analysis results
+## 📝 Examples
 
-5. **Results Compilation**: Generates comprehensive reports including:
-   - Per-domain summaries
-   - Overall findings across all domains
-   - Structured JSON output for further processing
+### E-commerce Price Research
+```bash
+smart-crawler \
+  --objective "Find product pricing, discounts, and shipping costs" \
+  --domains "shop1.com,shop2.com,competitor.com" \
+  --max-urls 15 \
+  --output pricing-research.json
+```
 
-## Output Format
+### Company Information Gathering
+```bash
+smart-crawler \
+  -o "Find company contact information, team members, and office locations" \
+  -d "company.com" \
+  -m 8 \
+  --delay 2000 \
+  -v
+```
 
-Results are saved in JSON format containing:
-- Crawling objective and target domains
-- Selected URLs for each domain
-- Scraped content with metadata
-- AI analysis for each page
-- Domain-specific and overall summaries
+### Technical Documentation Search
+```bash
+smart-crawler \
+  --objective "Find API documentation, integration guides, and developer resources" \
+  --domains "docs.example.com,api.service.com" \
+  --max-urls 20 \
+  --output api-docs.json
+```
 
-## Best Practices
+### News and Content Analysis
+```bash
+smart-crawler \
+  -o "Find recent news articles about artificial intelligence and machine learning" \
+  -d "news-site.com,tech-blog.com" \
+  -m 12 \
+  --delay 1500
+```
 
-- Use specific, clear objectives for better URL selection
-- Start with conservative max-url limits to test effectiveness
-- Use appropriate delays (1000ms+) to be respectful to target sites
-- Review robots.txt and terms of service for target domains
-- Monitor API usage when processing large numbers of URLs
+## ⚙️ Configuration
 
-## Limitations
+### Environment Variables
 
-- Requires valid Anthropic API key with sufficient credits
-- Subject to rate limits of both the Claude API and target websites
-- JavaScript-rendered content may not be fully captured
-- Some sites may block automated crawling
+- `ANTHROPIC_API_KEY`: Your Claude API key (required)
+- `RUST_LOG`: Set logging level (`debug`, `info`, `warn`, `error`)
 
-## License
+### Best Practices
 
-GPL-3.0 license
+- **Specific objectives**: Use clear, specific objectives for better URL selection
+- **Conservative limits**: Start with lower `--max-urls` values (5-10) to test
+- **Respectful delays**: Use delays of 1000ms or more to avoid overwhelming servers
+- **Check robots.txt**: Review target sites' crawling policies
+- **Monitor API usage**: Claude API has usage limits and costs
+
+## 🔧 Troubleshooting
+
+### Common Issues
+
+**"WebDriver connection failed"**
+- Ensure WebDriver (geckodriver/chromedriver) is running on port 4444
+- Check that the browser is installed
+- Try restarting the WebDriver
+
+**"ANTHROPIC_API_KEY not found"**
+- Set the environment variable in your terminal session
+- Verify the API key is correct and has sufficient credits
+
+**"Permission denied" (macOS/Linux)**
+- Make the binary executable: `chmod +x smart-crawler`
+- For system-wide installation, use `sudo` when moving to `/usr/local/bin/`
+
+**"No URLs selected by LLM"**
+- Try a more specific objective
+- Increase `--max-urls` limit
+- Use `--verbose` to see what URLs were found
+
+**Rate limiting/blocked requests**
+- Increase `--delay` between requests
+- Some sites block crawlers; respect robots.txt
+- Consider using fewer concurrent requests
+
+### Getting Help
+
+- Check the [Issues page](https://github.com/brainless/SmartCrawler/issues) for known problems
+- Create a new issue with detailed error messages and system information
+- Include your command and any error output when reporting problems
+
+## 📄 License
+
+GPL-3.0 License - see [LICENSE](LICENSE) file for details.
+
+---
+
+**Note**: SmartCrawler is designed for ethical web scraping and research purposes. Always respect websites' terms of service and robots.txt files. Be mindful of rate limits and server resources when crawling.
