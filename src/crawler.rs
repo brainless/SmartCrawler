@@ -206,9 +206,7 @@ impl SmartCrawler {
         // Step 2.5: Filter out already scraped URLs and track unique URLs
         {
             let mut scraped_urls = self.urls_scraped.lock().unwrap();
-            let domain_urls = scraped_urls
-                .entry(domain.to_string())
-                .or_insert_with(HashSet::new);
+            let domain_urls = scraped_urls.entry(domain.to_string()).or_default();
 
             selected_urls.retain(|url: &String| {
                 // Added type annotation : &String

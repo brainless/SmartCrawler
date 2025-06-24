@@ -34,6 +34,12 @@ pub struct SitemapParser {
     client: Client,
 }
 
+impl Default for SitemapParser {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SitemapParser {
     pub fn new() -> Self {
         Self {
@@ -46,7 +52,7 @@ impl SitemapParser {
 
     pub async fn discover_sitemap(&self, domain: &str) -> Result<Vec<String>, SitemapError> {
         let mut sitemaps = Vec::new();
-        
+
         // Try common sitemap locations
         let sitemap_urls = vec![
             format!("https://{}/sitemap.xml", domain),
@@ -81,7 +87,7 @@ impl SitemapParser {
     async fn check_robots_txt(&self, domain: &str) -> Result<Vec<String>, SitemapError> {
         let robots_url = format!("https://{}/robots.txt", domain);
         let response = self.client.get(&robots_url).send().await?;
-        
+
         if !response.status().is_success() {
             return Ok(Vec::new());
         }
@@ -106,11 +112,11 @@ impl SitemapParser {
     pub async fn parse_sitemap(&self, sitemap_url: &str) -> Result<Vec<SitemapUrl>, SitemapError> {
         let response = self.client.get(sitemap_url).send().await?;
         let content = response.text().await?;
-        
+
         let mut urls = Vec::new();
         let mut reader = quick_xml::Reader::from_str(&content);
         reader.trim_text(true);
-        
+
         let mut buf = Vec::new();
         let mut current_url = SitemapUrl {
             loc: String::new(),
@@ -123,23 +129,21 @@ impl SitemapParser {
 
         loop {
             match reader.read_event_into(&mut buf) {
-                Ok(quick_xml::events::Event::Start(ref e)) => {
-                    match e.name().as_ref() {
-                        b"url" => {
-                            in_url = true;
-                            current_url = SitemapUrl {
-                                loc: String::new(),
-                                lastmod: None,
-                                changefreq: None,
-                                priority: None,
-                            };
-                        }
-                        b"loc" | b"lastmod" | b"changefreq" | b"priority" => {
-                            current_tag = String::from_utf8_lossy(e.name().as_ref()).to_string();
-                        }
-                        _ => {}
+                Ok(quick_xml::events::Event::Start(ref e)) => match e.name().as_ref() {
+                    b"url" => {
+                        in_url = true;
+                        current_url = SitemapUrl {
+                            loc: String::new(),
+                            lastmod: None,
+                            changefreq: None,
+                            priority: None,
+                        };
                     }
-                }
+                    b"loc" | b"lastmod" | b"changefreq" | b"priority" => {
+                        current_tag = String::from_utf8_lossy(e.name().as_ref()).to_string();
+                    }
+                    _ => {}
+                },
                 Ok(quick_xml::events::Event::Text(e)) => {
                     if in_url {
                         let text = e.unescape()?.to_string();
@@ -152,20 +156,18 @@ impl SitemapParser {
                         }
                     }
                 }
-                Ok(quick_xml::events::Event::End(ref e)) => {
-                    match e.name().as_ref() {
-                        b"url" => {
-                            if in_url && !current_url.loc.is_empty() {
-                                urls.push(current_url.clone());
-                            }
-                            in_url = false;
+                Ok(quick_xml::events::Event::End(ref e)) => match e.name().as_ref() {
+                    b"url" => {
+                        if in_url && !current_url.loc.is_empty() {
+                            urls.push(current_url.clone());
                         }
-                        b"loc" | b"lastmod" | b"changefreq" | b"priority" => {
-                            current_tag.clear();
-                        }
-                        _ => {}
+                        in_url = false;
                     }
-                }
+                    b"loc" | b"lastmod" | b"changefreq" | b"priority" => {
+                        current_tag.clear();
+                    }
+                    _ => {}
+                },
                 Ok(quick_xml::events::Event::Eof) => break,
                 Err(e) => return Err(SitemapError::XmlError(e)),
                 _ => {}
@@ -191,33 +193,29 @@ impl SitemapParser {
         let mut sitemap_urls = Vec::new();
         let mut reader = quick_xml::Reader::from_str(content);
         reader.trim_text(true);
-        
+
         let mut buf = Vec::new();
         let mut in_sitemap = false;
         let mut current_tag = String::new();
 
         loop {
             match reader.read_event_into(&mut buf) {
-                Ok(quick_xml::events::Event::Start(ref e)) => {
-                    match e.name().as_ref() {
-                        b"sitemap" => in_sitemap = true,
-                        b"loc" => current_tag = "loc".to_string(),
-                        _ => {}
-                    }
-                }
+                Ok(quick_xml::events::Event::Start(ref e)) => match e.name().as_ref() {
+                    b"sitemap" => in_sitemap = true,
+                    b"loc" => current_tag = "loc".to_string(),
+                    _ => {}
+                },
                 Ok(quick_xml::events::Event::Text(e)) => {
                     if in_sitemap && current_tag == "loc" {
                         let url = e.unescape()?.to_string();
                         sitemap_urls.push(url);
                     }
                 }
-                Ok(quick_xml::events::Event::End(ref e)) => {
-                    match e.name().as_ref() {
-                        b"sitemap" => in_sitemap = false,
-                        b"loc" => current_tag.clear(),
-                        _ => {}
-                    }
-                }
+                Ok(quick_xml::events::Event::End(ref e)) => match e.name().as_ref() {
+                    b"sitemap" => in_sitemap = false,
+                    b"loc" => current_tag.clear(),
+                    _ => {}
+                },
                 Ok(quick_xml::events::Event::Eof) => break,
                 Err(e) => return Err(SitemapError::XmlError(e)),
                 _ => {}
