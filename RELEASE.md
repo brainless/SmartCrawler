@@ -215,13 +215,18 @@ After creating a release:
 - [ ] Update documentation if needed
 - [ ] Announce release (if applicable)
 
-## Environment Variables
+## Permissions and Environment Variables
 
-The workflow may require these secrets:
+The workflow requires:
 
+- `contents: write` permission (automatically granted to the workflow)
 - `GITHUB_TOKEN`: Automatically provided by GitHub
+
+Optional secrets for enhanced functionality:
 - `APPLE_CERTIFICATE`: For macOS code signing (optional)
 - `APPLE_CERTIFICATE_PASSWORD`: For macOS code signing (optional)
+
+The workflow uses the modern `gh` CLI instead of deprecated GitHub Actions for reliability.
 
 ## Support
 

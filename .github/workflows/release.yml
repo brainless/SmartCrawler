@@ -6,6 +6,9 @@ on:
       - 'v*'  # Trigger on version tags like v1.0.0
   workflow_dispatch:  # Allow manual triggering
 
+permissions:
+  contents: write  # Required for creating releases and uploading assets
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -47,22 +50,38 @@ jobs:
             CHANGELOG="Development build from commit $(git rev-parse --short HEAD)"
           fi
           
-          # Save changelog to file for multi-line output
-          cat > changelog.txt << 'EOF'
-          $CHANGELOG
-          EOF
+          # Save changelog to environment variable
+          {
+            echo 'CHANGELOG<<EOF'
+            if [ -n "$CHANGELOG" ]; then
+              echo "$CHANGELOG"
+            else
+              echo "No changes since last release"
+            fi
+            echo EOF
+          } >> $GITHUB_ENV
           
       - name: Create Release
         id: create_release
-        uses: actions/create-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ github.ref_name }}
-          release_name: SmartCrawler ${{ steps.get_version.outputs.version }}
-          body_path: changelog.txt
-          draft: false
-          prerelease: ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') }}
+        run: |
+          # Determine if this is a prerelease
+          PRERELEASE=""
+          if [[ "${{ github.ref_name }}" == *"alpha"* ]] || \
+             [[ "${{ github.ref_name }}" == *"beta"* ]] || \
+             [[ "${{ github.ref_name }}" == *"rc"* ]]; then
+            PRERELEASE="--prerelease"
+          fi
+          
+          # Create release using gh CLI
+          RELEASE_URL=$(gh release create "${{ github.ref_name }}" \
+            --title "SmartCrawler ${{ steps.get_version.outputs.version }}" \
+            --notes "$CHANGELOG" \
+            $PRERELEASE \
+            --repo "${{ github.repository }}")
+          
+          echo "upload_url=$RELEASE_URL" >> $GITHUB_OUTPUT
 
   build-release:
     name: Build Release
@@ -157,14 +176,12 @@ jobs:
           fi
           
       - name: Upload Release Asset
-        uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.create-release.outputs.upload_url }}
-          asset_path: ${{ matrix.name }}-${{ needs.create-release.outputs.version }}.${{ matrix.archive }}
-          asset_name: ${{ matrix.name }}-${{ needs.create-release.outputs.version }}.${{ matrix.archive }}
-          asset_content_type: application/octet-stream
+        run: |
+          gh release upload ${{ github.ref_name }} \
+            ${{ matrix.name }}-${{ needs.create-release.outputs.version }}.${{ matrix.archive }} \
+            --repo "${{ github.repository }}"
 
   build-installers:
     name: Build Native Installers
@@ -281,11 +298,9 @@ jobs:
           cp target/${{ matrix.target }}/rpm/RPMS/x86_64/*.rpm smart-crawler-${{ needs.create-release.outputs.version }}.rpm
           
       - name: Upload Installer
-        uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.create-release.outputs.upload_url }}
-          asset_path: smart-crawler-${{ needs.create-release.outputs.version }}.${{ matrix.installer }}
-          asset_name: smart-crawler-${{ needs.create-release.outputs.version }}.${{ matrix.installer }}
-          asset_content_type: application/octet-stream
+        run: |
+          gh release upload ${{ github.ref_name }} \
+            smart-crawler-${{ needs.create-release.outputs.version }}.${{ matrix.installer }} \
+            --repo "${{ github.repository }}"
