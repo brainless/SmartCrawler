@@ -1,6 +1,6 @@
 [package]
 name = "smart-crawler"
-version = "0.2.5"
+version = "0.2.6"
 edition = "2021"
 authors = ["SmartCrawler Team"]
 description = "A smart web crawler that uses LLMs to make smart crawling decisions"
@@ -33,7 +33,7 @@ assets = [
 
 [package.metadata.rpm]
 package = "smart-crawler"
-version = "0.2.5"
+version = "0.2.6"
 release = "1"
 epoch = 0
 license = "MIT"
