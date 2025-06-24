@@ -3,7 +3,7 @@ use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::collections::HashSet;
+// HashSet is no longer needed here as the logic moved to LLM trait default impl
 use std::env;
 use thiserror::Error;
 
@@ -12,20 +12,20 @@ pub enum ClaudeError {
     #[error("HTTP request failed: {0}")]
     HttpError(#[from] reqwest::Error),
     #[error("JSON parsing failed: {0}")]
-    JsonError(#[from] serde_json::Error),
+    JsonError(#[from] serde_json::Error), // This might be less used if parsing moves to trait
     #[error("API error: {0}")]
     ApiError(String),
     #[error("Environment variable ANTHROPIC_API_KEY not found")]
     MissingApiKey,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)] // Added Clone
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ClaudeResponse {
     pub id: String,
     pub content: Vec<ContentBlock>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)] // Added Clone
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ContentBlock {
     #[serde(rename = "type")]
     pub content_type: String,
@@ -50,8 +50,7 @@ impl ClaudeClient {
         Ok(Self { client, api_key })
     }
 
-    // This is the original send_message, renamed to avoid conflict with trait method
-    // and to keep its specific error type for internal calls.
+    // This internal method is still used by the `send_message` trait method.
     async fn send_message_internal(&self, message: &str) -> Result<ClaudeResponse, ClaudeError> {
         let payload = json!({
             "model": "claude-3-haiku-20240307",
@@ -92,141 +91,38 @@ impl ClaudeClient {
 
 #[async_trait]
 impl LLM for ClaudeClient {
-    // Signature changed to match the updated LLM trait (urls: &[String])
-    async fn select_urls(
-        &self,
-        objective: &str,
-        urls: &[String], // Changed from urls: &[T]
-        domain: &str,
-        max_urls: usize,
-    ) -> Result<Vec<String>, LlmError> {
-        // url_list is now directly from the `urls` parameter.
-        // We clone it to own the data and be able to call .join() later.
-        // Also apply the take(200) limit like before.
-        let url_list: Vec<String> = urls.iter().take(200).cloned().collect();
+    // select_urls is now provided by the default implementation in the LLM trait.
+    // If ClaudeClient needed a specific version, it would be implemented here.
+    // async fn select_urls(
+    //     &self,
+    //     objective: &str,
+    //     urls: &[String],
+    //     domain: &str,
+    //     max_urls: usize,
+    // ) -> Result<Vec<String>, LlmError> {
+    //     // Call default trait implementation:
+    //     // LLM::select_urls(self, objective, urls, domain, max_urls).await
+    //     // Or provide a custom implementation if needed.
+    //     // For this refactor, we are removing it to use the default.
+    // }
 
-        tracing::info!("URLs provided to Claude for selection: {:?}", url_list);
+    // analyze_content is now provided by the default implementation in the LLM trait.
+    // async fn analyze_content(
+    //     &self,
+    //     objective: &str,
+    //     url: &str,
+    //     content: &str,
+    // ) -> Result<String, LlmError> {
+    //     // Call default trait implementation:
+    //     // LLM::analyze_content(self, objective, url, content).await
+    //     // Or provide a custom implementation if needed.
+    //     // For this refactor, we are removing it to use the default.
+    // }
 
-        let prompt = format!(
-            r#"You are helping a web crawler select the most relevant URLs to crawl for a specific objective.
-
-Domain: {}
-Objective: {}
-
-Here are the available URLs:
-{}
-
-Please analyze these URLs and select the {} most relevant ones that would likely contain information related to the objective.
-
-IMPORTANT: You MUST only return URLs that are exactly from the list above. Do not modify, create, or suggest any new URLs.
-
-Consider:
-1. URL structure and path names that suggest relevant content
-2. Likely page types (product pages, articles, documentation, etc.)
-3. Depth and specificity of URLs
-4. Avoid redundant or overly similar URLs
-
-Return ONLY a JSON array of the selected URLs that exist in the provided list, nothing else. Example format:
-["https://example.com/page1", "https://example.com/page2"]"#,
-            domain,
-            objective,
-            url_list.join("\n"),
-            max_urls.min(20) // Conservative limit
-        );
-
-        // Call the internal method that returns ClaudeError
-        let response = self
-            .send_message_internal(&prompt)
-            .await
-            .map_err(|e| Box::new(e) as LlmError)?;
-
-        let content = response
-            .content
-            .first()
-            .ok_or_else(|| ClaudeError::ApiError("No content in response".to_string()))
-            .map_err(|e| Box::new(e) as LlmError)?;
-
-        let selected_urls_from_llm: Vec<String> = serde_json::from_str(&content.text)
-            .map_err(ClaudeError::JsonError) // Map serde_json::Error to ClaudeError first
-            .map_err(|e| Box::new(e) as LlmError)?;
-
-        // Create a set of valid URLs for fast lookup (using the input `url_list` for validation)
-        let valid_urls_set: HashSet<String> = url_list.into_iter().collect();
-
-        // Filter out any URLs that are not in the original list
-        let filtered_urls: Vec<String> = selected_urls_from_llm
-            .into_iter()
-            .filter(|url| {
-                let is_valid = valid_urls_set.contains(url);
-                if !is_valid {
-                    tracing::warn!(
-                        "Claude returned URL not in original list, ignoring: {}",
-                        url
-                    );
-                }
-                is_valid
-            })
-            .collect();
-
-        Ok(filtered_urls)
-    }
-
-    async fn analyze_content(
-        &self,
-        objective: &str,
-        url: &str,
-        content: &str,
-    ) -> Result<String, LlmError> {
-        let prompt = format!(
-            r#"You are analyzing web content for a specific objective.
-
-URL: {}
-Objective: {}
-
-Content (truncated if necessary):
-{}
-
-INSTRUCTIONS:
-1. First, determine if this page contains information that directly relates to the objective
-2. If the objective is NOT clearly met by the content, respond with exactly: "OBJECTIVE_NOT_MET"
-3. If the objective IS met, extract and return ONLY the specific information relevant to the objective
-4. Do not provide key findings, actionable insights, or additional analysis - only the relevant information itself
-
-Response format:
-- If objective not met: "OBJECTIVE_NOT_MET"
-- If objective met: Only the relevant information from the content"#,
-            url,
-            objective,
-            content.chars().take(8000).collect::<String>()
-        );
-
-        let response = self
-            .send_message_internal(&prompt)
-            .await
-            .map_err(|e| Box::new(e) as LlmError)?;
-
-        let content_text = response
-            .content
-            .first()
-            .ok_or_else(|| ClaudeError::ApiError("No content in response".to_string()))
-            .map_err(|e| Box::new(e) as LlmError)?
-            .text
-            .clone();
-
-        // Check if the objective was not met and return an error
-        if content_text.trim() == "OBJECTIVE_NOT_MET" {
-            return Err(Box::new(ClaudeError::ApiError(format!(
-                "Objective '{}' not clearly met in content from {}",
-                objective, url
-            ))) as LlmError);
-        }
-
-        Ok(content_text)
-    }
-
+    // This method MUST be implemented by concrete types as it's specific to the LLM provider.
     async fn send_message(&self, message: &str) -> Result<ClaudeResponse, LlmError> {
         self.send_message_internal(message)
             .await
-            .map_err(|e| Box::new(e) as LlmError)
+            .map_err(|e| Box::new(e) as LlmError) // Convert ClaudeError to LlmError
     }
 }
