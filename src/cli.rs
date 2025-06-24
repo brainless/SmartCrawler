@@ -98,7 +98,9 @@ impl CrawlerConfig {
         if let Some(clean_html_args) = matches.get_many::<String>("clean-html") {
             let args: Vec<&String> = clean_html_args.collect();
             if args.len() != 2 {
-                eprintln!("Error: --clean-html requires exactly 2 arguments: <input_file> <output_file>");
+                eprintln!(
+                    "Error: --clean-html requires exactly 2 arguments: <input_file> <output_file>"
+                );
                 std::process::exit(1);
             }
             return AppMode::CleanHtml(CleanHtmlConfig {
@@ -110,7 +112,7 @@ impl CrawlerConfig {
 
         // Default crawl mode
         let objective = matches.get_one::<String>("objective").unwrap().clone();
-        
+
         let domains_str = matches.get_one::<String>("domains").unwrap();
         let domains: Vec<String> = domains_str
             .split(',')
@@ -141,19 +143,18 @@ impl CrawlerConfig {
             verbose,
         })
     }
-
 }
 
 impl CleanHtmlConfig {
     pub fn validate(&self) -> Result<(), String> {
         use std::path::Path;
-        
+
         if !Path::new(&self.input_file).exists() {
             return Err(format!("Input file does not exist: {}", self.input_file));
         }
-        
+
         // Note: We allow output files in any directory - the file operation will fail if directory doesn't exist
-        
+
         Ok(())
     }
 }

@@ -7,7 +7,6 @@ use smart_crawler::{
 };
 use std::sync::Arc; // Import Arc
 use tracing::{error, info};
-use tracing_subscriber;
 
 #[tokio::main]
 async fn main() {

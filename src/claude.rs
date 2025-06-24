@@ -147,7 +147,7 @@ Return ONLY a JSON array of the selected URLs that exist in the provided list, n
             .map_err(|e| Box::new(e) as LlmError)?;
 
         let selected_urls_from_llm: Vec<String> = serde_json::from_str(&content.text)
-            .map_err(|e| ClaudeError::JsonError(e)) // Map serde_json::Error to ClaudeError first
+            .map_err(ClaudeError::JsonError) // Map serde_json::Error to ClaudeError first
             .map_err(|e| Box::new(e) as LlmError)?;
 
         // Create a set of valid URLs for fast lookup (using the input `url_list` for validation)

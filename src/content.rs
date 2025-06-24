@@ -682,25 +682,25 @@ pub fn clean_html(html: &str) -> String {
     // Remove empty HTML tags (multiple passes to handle nested empty tags)
     // We need multiple passes because removing an empty tag might make its parent empty
     let mut previous_length = 0;
+    let self_closing_regex = Regex::new(r"<(\w+)\s*/>").expect("Valid regex");
+
     while cleaned_html.len() != previous_length {
         previous_length = cleaned_html.len();
 
         // Remove self-closing empty tags that don't need to be preserved
-        if let Ok(regex) = Regex::new(r"<(\w+)\s*/>") {
-            cleaned_html = regex
-                .replace_all(&cleaned_html, |caps: &regex::Captures| {
-                    let tag = &caps[1];
-                    // Preserve certain self-closing tags even if empty
-                    match tag {
-                        "br" | "hr" | "img" | "input" | "meta" | "link" | "area" | "base"
-                        | "col" | "embed" | "source" | "track" | "wbr" => {
-                            caps.get(0).unwrap().as_str().to_string()
-                        }
-                        _ => String::new(), // Remove other empty self-closing tags
+        cleaned_html = self_closing_regex
+            .replace_all(&cleaned_html, |caps: &regex::Captures| {
+                let tag = &caps[1];
+                // Preserve certain self-closing tags even if empty
+                match tag {
+                    "br" | "hr" | "img" | "input" | "meta" | "link" | "area" | "base" | "col"
+                    | "embed" | "source" | "track" | "wbr" => {
+                        caps.get(0).unwrap().as_str().to_string()
                     }
-                })
-                .to_string();
-        }
+                    _ => String::new(), // Remove other empty self-closing tags
+                }
+            })
+            .to_string();
 
         // Remove empty paired tags (no content between opening and closing tags)
         // Try different patterns to catch various empty tag formats
@@ -1250,7 +1250,7 @@ mod tests {
     #[tokio::test]
     async fn test_large_page_with_multiple_items() {
         let html = include_str!("../test_content/sample_large_page_with_multiple_items.html");
-        let structured_data = extract_structured_data(&html).await;
+        let structured_data = extract_structured_data(html).await;
 
         // After HTML cleaning, the page content classification may change
         // The important thing is that we successfully extract some structured content
