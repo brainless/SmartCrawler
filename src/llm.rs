@@ -103,7 +103,11 @@ Selected path numbers:"#,
             })
             .collect();
 
-        tracing::info!("LLM selected {} URLs from {} candidates", filtered_urls.len(), url_list.len());
+        tracing::info!(
+            "LLM selected {} URLs from {} candidates",
+            filtered_urls.len(),
+            url_list.len()
+        );
         Ok(filtered_urls)
     }
 
@@ -147,7 +151,7 @@ Response format:
             .clone();
 
         // Check if the objective was not met and return an error
-        if content_text.trim() == "OBJECTIVE_NOT_MET" {
+        if content_text.contains("OBJECTIVE_NOT_MET") {
             return Err(Box::new(DefaultLlmImplError::ObjectiveNotMet(format!(
                 "Objective '{}' not clearly met in content from {}",
                 objective, url

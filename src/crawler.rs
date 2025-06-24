@@ -72,13 +72,13 @@ fn matches_objective_keywords(path_query: &str, objective: &str) -> bool {
         .split_whitespace()
         .filter(|word| word.len() > 2) // Filter out short words
         .collect();
-    
+
     let path_lower = path_query.to_lowercase();
-    
+
     // Check if any objective keyword appears in the path
-    objective_keywords.iter().any(|keyword| {
-        path_lower.contains(keyword)
-    })
+    objective_keywords
+        .iter()
+        .any(|keyword| path_lower.contains(keyword))
 }
 
 pub struct SmartCrawler {
@@ -220,8 +220,8 @@ impl SmartCrawler {
         urls_to_analyze.extend(urls_found_in_homepage);
 
         // Only retain URLs that are one level deeper
-        let mut urls_to_analyze =
-            select_urls_one_level_deeper(urls_to_analyze, format!("https://{}", domain));
+        let urls_one_level_deeper =
+            select_urls_one_level_deeper(urls_to_analyze.clone(), format!("https://{}", domain));
 
         // Step 1.5: Add URLs that match objective keywords (improvement from issue #19)
         let objective_matching_urls: Vec<String> = urls_to_analyze
@@ -236,6 +236,7 @@ impl SmartCrawler {
             .cloned()
             .collect();
 
+        let mut urls_to_analyze = urls_one_level_deeper;
         if !objective_matching_urls.is_empty() {
             tracing::info!(
                 "Found {} URLs matching objective keywords for {}",
@@ -333,7 +334,6 @@ impl SmartCrawler {
                                 web_page.url,
                                 e
                             );
-                            analysis.push(format!("URL: {}\nAnalysis failed: {}", web_page.url, e));
                         }
                     }
 
