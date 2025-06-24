@@ -248,3 +248,38 @@ GitHub issue #19 suggests several improvements to enhance the SmartCrawler's URL
 - Objective matching: Parse objective for keywords, match against URL paths
 - Performance: Reduce memory usage by storing partial URLs instead of full URLs
 - Accuracy: Improve LLM decisions with cleaner, domain-contextualized prompts
+
+## Browser Scrolling Enhancement Implementation - Issue #21
+
+### User Request
+Can you please check ideas in #21 on GitHub and implement them. Please use development workflow as in Claude.md
+
+### Issue Analysis
+GitHub issue #21 requests an enhancement to the `Browser::scrape_url` method to improve content capture:
+
+1. **Add scrolling functionality**: Before extracting HTML content, scroll through the page
+2. **Mimic human behavior**: Scroll at a realistic pace that resembles human browsing
+3. **Time limitation**: Stop scrolling after 10 seconds maximum
+4. **Dynamic content capture**: Help load JavaScript-rendered content that appears on scroll
+
+### Task Plan
+1. Create new branch for GitHub issue #21 improvements
+2. Update VIBE.md with task details (this section)
+3. Implement browser scrolling functionality in Browser::scrape_url:
+   - Add scroll-before-extract logic to scrape_url method
+   - Implement realistic scrolling behavior using fantoccini WebDriver commands
+   - Add 10-second time limit with appropriate timing controls
+4. Add realistic scrolling with proper timing and behavior:
+   - Scroll incrementally to mimic human behavior
+   - Use reasonable delays between scroll actions
+   - Handle pages of different lengths gracefully
+5. Test scrolling implementation
+6. Commit and push the improvements
+
+### Implementation Details
+- Use fantoccini WebDriver scroll commands (execute_script with window.scrollBy)
+- Implement incremental scrolling with delays (e.g., scroll 300px every 500ms)
+- Track total scroll time to enforce 10-second limit
+- Detect when page bottom is reached to avoid unnecessary scrolling
+- Ensure graceful handling of scroll failures or timeouts
+- Log scrolling progress for debugging and monitoring
