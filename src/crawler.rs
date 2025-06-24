@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use thiserror::Error;
+use url::Url;
 
 #[derive(Error, Debug)]
 pub enum CrawlerError {
@@ -49,11 +50,42 @@ pub struct CrawlerResults {
     pub results: Vec<CrawlResult>,
 }
 
+/// Extract path and query from a URL
+fn extract_path_query(url: &str) -> Option<String> {
+    if let Ok(parsed) = Url::parse(url) {
+        let mut path_query = parsed.path().to_string();
+        if let Some(query) = parsed.query() {
+            path_query.push('?');
+            path_query.push_str(query);
+        }
+        Some(path_query)
+    } else {
+        None
+    }
+}
+
+/// Check if a URL path contains objective keywords
+fn matches_objective_keywords(path_query: &str, objective: &str) -> bool {
+    // Extract keywords from objective (simple approach - split by common separators)
+    let objective_lower = objective.to_lowercase();
+    let objective_keywords: Vec<&str> = objective_lower
+        .split_whitespace()
+        .filter(|word| word.len() > 2) // Filter out short words
+        .collect();
+    
+    let path_lower = path_query.to_lowercase();
+    
+    // Check if any objective keyword appears in the path
+    objective_keywords.iter().any(|keyword| {
+        path_lower.contains(keyword)
+    })
+}
+
 pub struct SmartCrawler {
     sitemap_parser: SitemapParser,
     llm_client: Arc<dyn LLM + Send + Sync>, // Changed from claude_client: ClaudeClient
     config: CrawlerConfig,
-    urls_scraped: Arc<Mutex<HashMap<String, HashSet<String>>>>,
+    urls_scraped: Arc<Mutex<HashMap<String, HashSet<String>>>>, // domain -> set of path+query
 }
 
 impl SmartCrawler {
@@ -188,8 +220,31 @@ impl SmartCrawler {
         urls_to_analyze.extend(urls_found_in_homepage);
 
         // Only retain URLs that are one level deeper
-        let urls_to_analyze =
+        let mut urls_to_analyze =
             select_urls_one_level_deeper(urls_to_analyze, format!("https://{}", domain));
+
+        // Step 1.5: Add URLs that match objective keywords (improvement from issue #19)
+        let objective_matching_urls: Vec<String> = urls_to_analyze
+            .iter()
+            .filter(|url| {
+                if let Some(path_query) = extract_path_query(url) {
+                    matches_objective_keywords(&path_query, &self.config.objective)
+                } else {
+                    false
+                }
+            })
+            .cloned()
+            .collect();
+
+        if !objective_matching_urls.is_empty() {
+            tracing::info!(
+                "Found {} URLs matching objective keywords for {}",
+                objective_matching_urls.len(),
+                domain
+            );
+            // Add these URLs to ensure they get higher priority (they'll be deduplicated later)
+            urls_to_analyze.extend(objective_matching_urls);
+        }
 
         // Step 2: Use LLM to select relevant URLs
         tracing::info!("Asking LLM to select relevant URLs for: {}", domain);
@@ -203,19 +258,23 @@ impl SmartCrawler {
             )
             .await?;
 
-        // Step 2.5: Filter out already scraped URLs and track unique URLs
+        // Step 2.5: Filter out already scraped URLs and track unique URLs (using path+query only)
         {
             let mut scraped_urls = self.urls_scraped.lock().unwrap();
-            let domain_urls = scraped_urls.entry(domain.to_string()).or_default();
+            let domain_paths = scraped_urls.entry(domain.to_string()).or_default();
 
             selected_urls.retain(|url: &String| {
-                // Added type annotation : &String
-                if domain_urls.contains(url) {
-                    tracing::debug!("Skipping already scraped URL: {}", url);
-                    false
+                if let Some(path_query) = extract_path_query(url) {
+                    if domain_paths.contains(&path_query) {
+                        tracing::debug!("Skipping already scraped path: {}", path_query);
+                        false
+                    } else {
+                        domain_paths.insert(path_query);
+                        true
+                    }
                 } else {
-                    domain_urls.insert(url.clone());
-                    true
+                    tracing::warn!("Failed to parse URL for deduplication: {}", url);
+                    true // Include URLs we can't parse to be safe
                 }
             });
         }
