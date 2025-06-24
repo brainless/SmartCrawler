@@ -56,3 +56,35 @@ Create GitHub Actions workflow to build releases for Linux, Mac OS and Windows. 
 - Implement semantic versioning with git tags
 - Auto-generate changelogs from commit messages
 - Upload all artifacts to GitHub Releases
+
+## GitHub Actions Cross-Compilation Fix - Issue #9
+
+### User Request
+Please check issue #9 on GitHub and see if you can fix it.
+
+### Issue Analysis
+GitHub issue #9 reported a failure in the GitHub Actions workflow during binary preparation:
+- Error: `strip: Unable to recognise the format of the input file 'smart-crawler'`
+- Occurred when building for ARM64 Linux (`aarch64-unknown-linux-gnu`) target
+- Root cause: x86_64 `strip` command cannot process ARM64 binaries
+
+### Task Plan
+1. Create new branch for GitHub issue #9 fix
+2. Update VIBE.md with task details (this section)
+3. Fix cross-compilation strip issue in release workflow:
+   - Install cross-compilation binutils for ARM64
+   - Use target-specific strip tools (aarch64-linux-gnu-strip)
+   - Add graceful fallback if strip tools unavailable
+   - Enhanced error handling and logging
+4. Commit the cross-compilation strip fix
+5. Push branch for PR creation
+
+### Implementation Details
+- Added `binutils-aarch64-linux-gnu` package installation
+- Implemented target-specific strip command selection:
+  - ARM64 Linux: `aarch64-linux-gnu-strip`
+  - x86_64 Linux: `strip`
+  - macOS (both): `strip`
+  - Windows: skip (not applicable)
+- Added error checking and informative logging
+- Updated RELEASE.md troubleshooting documentation
