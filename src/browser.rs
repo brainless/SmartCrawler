@@ -1,5 +1,6 @@
 use crate::content::{extract_structured_data, ScrapedWebPage};
 use fantoccini::{Client, ClientBuilder};
+use rand::Rng;
 use scraper::{Html, Selector};
 use serde_json::Value;
 use std::time::{Duration, Instant};
@@ -121,15 +122,15 @@ impl Browser {
     async fn scroll_page_gradually(&self) -> Result<(), BrowserError> {
         let start_time = Instant::now();
         let max_scroll_duration = Duration::from_secs(10);
-        let scroll_step = 300; // pixels to scroll per step
-        let scroll_delay = Duration::from_millis(500); // delay between scroll actions
-
-        tracing::debug!("Starting gradual page scroll");
+        let mut rng = rand::rng();
 
         loop {
+            // Generate random values for this iteration
+            let scroll_step = rng.random_range(400..800); // Random between 200-400 pixels
+            let scroll_delay = Duration::from_millis(rng.random_range(100..400)); // Random between 300-800ms
+
             // Check if we've exceeded the time limit
             if start_time.elapsed() >= max_scroll_duration {
-                tracing::debug!("Scroll time limit reached (10 seconds), stopping");
                 break;
             }
 
@@ -142,7 +143,6 @@ impl Browser {
             let scroll_info = match scroll_info {
                 Value::Object(obj) => obj,
                 _ => {
-                    tracing::warn!("Failed to get scroll information, stopping scroll");
                     break;
                 }
             };
@@ -163,31 +163,19 @@ impl Browser {
             // Check if we've reached the bottom of the page
             if current_scroll + window_height >= document_height - 50 {
                 // 50px buffer
-                tracing::debug!("Reached bottom of page, stopping scroll");
                 break;
             }
 
             // Scroll down by the step amount
             let scroll_script = format!("window.scrollBy(0, {});", scroll_step);
-            if let Err(e) = self.client.execute(&scroll_script, vec![]).await {
-                tracing::warn!("Failed to execute scroll command: {}", e);
+            if let Err(_) = self.client.execute(&scroll_script, vec![]).await {
                 break;
             }
-
-            tracing::debug!(
-                "Scrolled to position: {} (page height: {})",
-                current_scroll + scroll_step,
-                document_height
-            );
 
             // Wait before next scroll to mimic human behavior
             sleep(scroll_delay).await;
         }
 
-        tracing::debug!(
-            "Completed gradual page scroll in {:?}",
-            start_time.elapsed()
-        );
         Ok(())
     }
 

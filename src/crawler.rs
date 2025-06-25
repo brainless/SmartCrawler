@@ -5,6 +5,7 @@ use crate::llm::{LlmError, LLM};
 use crate::sitemap::SitemapParser;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use std::io::Write;
 use std::sync::{Arc, Mutex};
 use thiserror::Error;
 use url::Url;
@@ -236,16 +237,18 @@ impl SmartCrawler {
             .cloned()
             .collect();
 
-        let mut urls_to_analyze = urls_one_level_deeper;
+        let mut urls_to_analyze = Vec::new();
         if !objective_matching_urls.is_empty() {
             tracing::info!(
                 "Found {} URLs matching objective keywords for {}",
                 objective_matching_urls.len(),
                 domain
             );
-            // Add these URLs to ensure they get higher priority (they'll be deduplicated later)
+            // Add objective matching URLs first to ensure they get higher priority
             urls_to_analyze.extend(objective_matching_urls);
         }
+        // Add the remaining URLs from urls_one_level_deeper
+        urls_to_analyze.extend(urls_one_level_deeper);
 
         // Step 2: Use LLM to select relevant URLs
         tracing::info!("Asking LLM to select relevant URLs for: {}", domain);
@@ -305,9 +308,29 @@ impl SmartCrawler {
 
         let mut scraped_content = Vec::new();
         let mut analysis = Vec::new();
+        let mut objective_met = false;
 
         // Step 4: Scrape and analyze each URL sequentially
         for url in &selected_urls {
+            if objective_met {
+                // Ask user if they want to continue
+                println!("\nObjective has been met! Current analysis:");
+                for entry in &analysis {
+                    println!("{}", entry);
+                }
+
+                print!("\nContinue crawling remaining URLs? (y/N): ");
+                std::io::stdout().flush().unwrap();
+
+                let mut input = String::new();
+                std::io::stdin().read_line(&mut input).unwrap();
+                let continue_crawling = input.trim().to_lowercase() == "y";
+
+                if !continue_crawling {
+                    break;
+                }
+            }
+
             match browser.scrape_url(url).await {
                 Ok(web_page) => {
                     tracing::info!("Analyzing content from: {}", web_page.url);
@@ -327,13 +350,10 @@ impl SmartCrawler {
                                 "URL: {}\nAnalysis: {}",
                                 web_page.url, analysis_result
                             ));
+                            objective_met = true;
                         }
-                        Err(e) => {
-                            tracing::warn!(
-                                "Failed to analyze content from {}: {}",
-                                web_page.url,
-                                e
-                            );
+                        Err(_) => {
+                            objective_met = false;
                         }
                     }
 

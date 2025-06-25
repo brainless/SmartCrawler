@@ -73,3 +73,4 @@ regex = "1.0"
 fantoccini = { version = "0.22.0", default-features = false, features = ["rustls-tls"] }
 reqwest = { version = "0.12.20", default-features = false, features = ["json", "rustls-tls"] }
 rustls = { version = "0.23.28", default-features = false, features = ["ring"] }
+rand = { version = "0.9.1", default-features = false, features = ["thread_rng"] }
