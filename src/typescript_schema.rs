@@ -154,7 +154,8 @@ interface EntityExtractionResponse {
 /// Get specific TypeScript schema for a particular entity type
 pub fn get_entity_schema(entity_type: &str) -> &'static str {
     match entity_type {
-        "Person" => r#"
+        "Person" => {
+            r#"
 interface Person {
   type: "Person";
   first_name?: string;
@@ -166,8 +167,10 @@ interface Person {
   phone?: string;
   bio?: string;
   social_links?: string[];
-}"#,
-        "Location" => r#"
+}"#
+        }
+        "Location" => {
+            r#"
 interface Location {
   type: "Location";
   name?: string;
@@ -179,8 +182,10 @@ interface Location {
   latitude?: number;
   longitude?: number;
   venue_type?: string;
-}"#,
-        "Event" => r#"
+}"#
+        }
+        "Event" => {
+            r#"
 interface Event {
   type: "Event";
   title: string;
@@ -197,8 +202,10 @@ interface Event {
   price?: Price;
   registration_url?: string;
   status: "Upcoming" | "Ongoing" | "Completed" | "Cancelled" | "Postponed";
-}"#,
-        "Product" => r#"
+}"#
+        }
+        "Product" => {
+            r#"
 interface Product {
   type: "Product";
   name: string;
@@ -212,8 +219,10 @@ interface Product {
   images?: string[];
   reviews?: Review[];
   rating?: number;
-}"#,
-        "Organization" => r#"
+}"#
+        }
+        "Organization" => {
+            r#"
 interface Organization {
   type: "Organization";
   name: string;
@@ -225,8 +234,10 @@ interface Organization {
   headquarters?: Location;
   employees?: Person[];
   contact_info: ContactInfo;
-}"#,
-        "NewsArticle" => r#"
+}"#
+        }
+        "NewsArticle" => {
+            r#"
 interface NewsArticle {
   type: "NewsArticle";
   headline: string;
@@ -238,8 +249,10 @@ interface NewsArticle {
   category?: string;
   tags?: string[];
   url?: string;
-}"#,
-        "JobListing" => r#"
+}"#
+        }
+        "JobListing" => {
+            r#"
 interface JobListing {
   type: "JobListing";
   title: string;
@@ -253,7 +266,8 @@ interface JobListing {
   posted_date?: string; // ISO 8601 format
   application_deadline?: string; // YYYY-MM-DD format
   application_url?: string;
-}"#,
+}"#
+        }
         _ => "",
     }
 }
@@ -294,7 +308,8 @@ interface Review {
 /// Generate example JSON for a specific entity type
 pub fn get_entity_example(entity_type: &str) -> &'static str {
     match entity_type {
-        "Person" => r#"
+        "Person" => {
+            r#"
 {
   "type": "Person",
   "first_name": "John",
@@ -303,8 +318,10 @@ pub fn get_entity_example(entity_type: &str) -> &'static str {
   "company": "Tech Corp",
   "email": "john.doe@techcorp.com",
   "phone": "+1-555-0123"
-}"#,
-        "Location" => r#"
+}"#
+        }
+        "Location" => {
+            r#"
 {
   "type": "Location", 
   "name": "Tech Conference Center",
@@ -313,8 +330,10 @@ pub fn get_entity_example(entity_type: &str) -> &'static str {
   "state": "CA",
   "country": "USA",
   "postal_code": "94105"
-}"#,
-        "Event" => r#"
+}"#
+        }
+        "Event" => {
+            r#"
 {
   "type": "Event",
   "title": "Tech Conference 2024",
@@ -327,8 +346,10 @@ pub fn get_entity_example(entity_type: &str) -> &'static str {
     "city": "San Francisco"
   },
   "status": "Upcoming"
-}"#,
-        "Product" => r#"
+}"#
+        }
+        "Product" => {
+            r#"
 {
   "type": "Product",
   "name": "Wireless Headphones",
@@ -339,8 +360,10 @@ pub fn get_entity_example(entity_type: &str) -> &'static str {
   },
   "brand": "TechBrand",
   "availability": "InStock"
-}"#,
-        "Organization" => r#"
+}"#
+        }
+        "Organization" => {
+            r#"
 {
   "type": "Organization",
   "name": "Tech Corp",
@@ -350,8 +373,10 @@ pub fn get_entity_example(entity_type: &str) -> &'static str {
   "contact_info": {
     "email": "info@techcorp.com"
   }
-}"#,
-        "NewsArticle" => r#"
+}"#
+        }
+        "NewsArticle" => {
+            r#"
 {
   "type": "NewsArticle",
   "headline": "Breaking Tech News",
@@ -362,8 +387,10 @@ pub fn get_entity_example(entity_type: &str) -> &'static str {
   },
   "publication_date": "2024-01-15T10:30:00Z",
   "source": "Tech News Daily"
-}"#,
-        "JobListing" => r#"
+}"#
+        }
+        "JobListing" => {
+            r#"
 {
   "type": "JobListing",
   "title": "Senior Software Engineer",
@@ -379,7 +406,8 @@ pub fn get_entity_example(entity_type: &str) -> &'static str {
     "currency": "USD",
     "period": "Yearly"
   }
-}"#,
+}"#
+        }
         _ => "{}",
     }
 }

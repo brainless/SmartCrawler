@@ -1,5 +1,5 @@
 use crate::claude::ClaudeResponse; // Assuming ClaudeResponse might be generalized later
-use crate::entities::{ExtractedEntity, EntityExtractionResult};
+use crate::entities::{EntityExtractionResult, ExtractedEntity};
 use crate::typescript_schema::TYPESCRIPT_SCHEMA;
 use async_trait::async_trait;
 use thiserror::Error; // Added for custom errors within default impls
@@ -264,30 +264,29 @@ Start your response with {{ and end with }}. Do not wrap in code blocks or add a
         tracing::debug!("Raw LLM response for entity extraction: {}", content_text);
 
         // Extract JSON from the response - the LLM might include extra text
-        let json_str = extract_json_from_response(&content_text)
-            .ok_or_else(|| {
-                tracing::warn!("No valid JSON found in LLM response for {}", url);
-                Box::new(DefaultLlmImplError::ObjectiveNotMet(
-                    "No valid JSON object found in LLM response".to_string()
-                )) as LlmError
-            })?;
+        let json_str = extract_json_from_response(&content_text).ok_or_else(|| {
+            tracing::warn!("No valid JSON found in LLM response for {}", url);
+            Box::new(DefaultLlmImplError::ObjectiveNotMet(
+                "No valid JSON object found in LLM response".to_string(),
+            )) as LlmError
+        })?;
 
         tracing::debug!("Extracted JSON for parsing: {}", json_str);
 
         // Parse the JSON response
-        let extraction_data: serde_json::Value = serde_json::from_str(&json_str)
-            .map_err(|e| {
-                tracing::error!("JSON parsing failed for {}: {}", url, e);
-                tracing::error!("Problematic JSON: {}", json_str);
-                Box::new(DefaultLlmImplError::JsonParseFailed(e)) as LlmError
-            })?;
+        let extraction_data: serde_json::Value = serde_json::from_str(&json_str).map_err(|e| {
+            tracing::error!("JSON parsing failed for {}: {}", url, e);
+            tracing::error!("Problematic JSON: {}", json_str);
+            Box::new(DefaultLlmImplError::JsonParseFailed(e)) as LlmError
+        })?;
 
         let mut result = EntityExtractionResult::new(url.to_string(), objective.to_string());
-        
+
         // Extract entities
         if let Some(entities_array) = extraction_data["entities"].as_array() {
             for entity_value in entities_array {
-                if let Ok(entity) = serde_json::from_value::<ExtractedEntity>(entity_value.clone()) {
+                if let Ok(entity) = serde_json::from_value::<ExtractedEntity>(entity_value.clone())
+                {
                     result.entities.push(entity);
                 }
             }
@@ -317,18 +316,18 @@ Start your response with {{ and end with }}. Do not wrap in code blocks or add a
 fn extract_json_from_response(response: &str) -> Option<String> {
     // First, try to find a JSON object starting with { and ending with }
     let trimmed = response.trim();
-    
+
     // Case 1: Response is pure JSON (starts and ends with braces)
     if trimmed.starts_with('{') && trimmed.ends_with('}') {
         return Some(trimmed.to_string());
     }
-    
+
     // Case 2: JSON is embedded in the response - find the first complete JSON object
     if let Some(start) = trimmed.find('{') {
         let mut brace_count = 0;
         let mut in_string = false;
         let mut escaped = false;
-        
+
         for (i, ch) in trimmed[start..].char_indices() {
             match ch {
                 '"' if !escaped => in_string = !in_string,
@@ -343,13 +342,13 @@ fn extract_json_from_response(response: &str) -> Option<String> {
                 }
                 _ => escaped = false,
             }
-            
+
             if ch != '\\' {
                 escaped = false;
             }
         }
     }
-    
+
     // Case 3: Try to find JSON between code blocks or other markers
     for marker in ["```json", "```", "`"] {
         if let Some(start_pos) = trimmed.find(marker) {
@@ -368,7 +367,7 @@ fn extract_json_from_response(response: &str) -> Option<String> {
             }
         }
     }
-    
+
     None
 }
 
@@ -391,7 +390,10 @@ mod tests {
         That's the result."#;
         let result = extract_json_from_response(response);
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), r#"{"entities": [], "raw_analysis": "test", "extraction_confidence": 0.5}"#);
+        assert_eq!(
+            result.unwrap(),
+            r#"{"entities": [], "raw_analysis": "test", "extraction_confidence": 0.5}"#
+        );
     }
 
     #[test]
@@ -401,7 +403,10 @@ mod tests {
         ```"#;
         let result = extract_json_from_response(response);
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), r#"{"entities": [], "raw_analysis": "test", "extraction_confidence": 0.5}"#);
+        assert_eq!(
+            result.unwrap(),
+            r#"{"entities": [], "raw_analysis": "test", "extraction_confidence": 0.5}"#
+        );
     }
 
     #[test]

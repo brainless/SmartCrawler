@@ -93,7 +93,7 @@ impl Location {
 
     pub fn display_address(&self) -> String {
         let mut parts = Vec::new();
-        
+
         if let Some(address) = &self.address {
             parts.push(address.clone());
         }
@@ -106,9 +106,12 @@ impl Location {
         if let Some(country) = &self.country {
             parts.push(country.clone());
         }
-        
+
         if parts.is_empty() {
-            self.name.as_deref().unwrap_or("Unknown location").to_string()
+            self.name
+                .as_deref()
+                .unwrap_or("Unknown location")
+                .to_string()
         } else {
             parts.join(", ")
         }
