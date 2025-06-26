@@ -168,7 +168,7 @@ impl Browser {
 
             // Scroll down by the step amount
             let scroll_script = format!("window.scrollBy(0, {});", scroll_step);
-            if let Err(_) = self.client.execute(&scroll_script, vec![]).await {
+            if (self.client.execute(&scroll_script, vec![]).await).is_err() {
                 break;
             }
 
