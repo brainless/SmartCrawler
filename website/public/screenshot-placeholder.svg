@@ -1,0 +1,32 @@
+<svg width="600" height="400" viewBox="0 0 600 400" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="600" height="400" fill="#f8fafc" stroke="#e2e8f0" stroke-width="2"/>
+  
+  <!-- Terminal window -->
+  <rect x="50" y="80" width="500" height="240" rx="8" fill="#1e293b"/>
+  
+  <!-- Terminal header -->
+  <rect x="50" y="80" width="500" height="30" rx="8" fill="#374151"/>
+  <circle cx="70" cy="95" r="4" fill="#ef4444"/>
+  <circle cx="85" cy="95" r="4" fill="#f59e0b"/>
+  <circle cx="100" cy="95" r="4" fill="#10b981"/>
+  
+  <!-- Terminal text lines -->
+  <text x="70" y="135" font-family="monospace" font-size="12" fill="#e2e8f0">$ smart-crawler --objective "Find pricing" --domains "example.com"</text>
+  <text x="70" y="155" font-family="monospace" font-size="11" fill="#64748b">🤖 SmartCrawler v0.3.1</text>
+  <text x="70" y="175" font-family="monospace" font-size="11" fill="#64748b">Discovering sitemap for: example.com</text>
+  <text x="70" y="195" font-family="monospace" font-size="11" fill="#64748b">Found 45 URLs in sitemap</text>
+  <text x="70" y="215" font-family="monospace" font-size="11" fill="#64748b">Generated 8 keywords, ranked 45 URLs to 15 candidates</text>
+  <text x="70" y="235" font-family="monospace" font-size="11" fill="#64748b">Selected 5 URLs for crawling</text>
+  <text x="70" y="255" font-family="monospace" font-size="11" fill="#10b981">✓ Objective met! Found pricing information</text>
+  <text x="70" y="275" font-family="monospace" font-size="11" fill="#64748b">Results saved to pricing-results.json</text>
+  
+  <!-- Logo/icon in corner -->
+  <g transform="translate(450, 20)">
+    <rect width="40" height="40" rx="8" fill="#2563eb"/>
+    <text x="20" y="28" text-anchor="middle" font-size="24" fill="white">🤖</text>
+  </g>
+  
+  <!-- Title -->
+  <text x="300" y="50" text-anchor="middle" font-family="system-ui" font-size="18" font-weight="bold" fill="#1e293b">SmartCrawler in Action</text>
+</svg>
