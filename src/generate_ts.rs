@@ -76,8 +76,9 @@ mod tests {
     fn test_schema_generation() {
         let schema = generate_typescript_schema();
         assert!(!schema.is_empty());
-        assert!(schema.contains("interface Person"));
-        assert!(schema.contains("interface Location"));
-        assert!(schema.contains("interface Event"));
+        assert!(schema.contains("type Person"));
+        assert!(schema.contains("type Location"));
+        assert!(schema.contains("type Event"));
+        assert!(schema.contains("type LLMResponse"));
     }
 }
