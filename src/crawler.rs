@@ -353,21 +353,21 @@ impl SmartCrawler {
                         Ok(entity_result) => {
                             let entity_count = entity_result.entity_count();
                             let confidence = entity_result.extraction_confidence;
-                            
+
                             analysis.push(format!(
                                 "URL: {}\nExtracted {} entities with {:.1}% confidence\nAnalysis: {}",
-                                web_page.url, 
+                                web_page.url,
                                 entity_count,
                                 confidence * 100.0,
                                 entity_result.raw_analysis
                             ));
-                            
+
                             extracted_entities.push(entity_result);
                             objective_met = entity_count > 0 && confidence > 0.5;
                         }
                         Err(e) => {
                             tracing::warn!("Entity extraction failed for {}: {}", web_page.url, e);
-                            
+
                             // Fallback to simple content analysis
                             match self
                                 .llm_client
