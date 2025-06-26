@@ -2,7 +2,6 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-
 ## Development Workflow
 - Create a new branch for each task. Branch names should start with chore/ or feature/ or fix/ etc.
 - When starting a new task please save the user's request and task plan to VIBE.md
@@ -19,8 +18,8 @@ cargo build --release
 # Run with basic command
 cargo run -- --objective "Find pricing information" --domains "example.com" --max-urls 5
 
-# Run with all options
-cargo run -- -o "Your objective" -d "domain1.com,domain2.com" -m 10 --delay 1000 -O results.json -v
+# Run with all options including keyword filtering
+cargo run -- -o "Your objective" -d "domain1.com,domain2.com" -m 10 --delay 1000 -O results.json -v --candidate-multiplier 5
 ```
 
 ### Development Commands  
@@ -50,49 +49,24 @@ SmartCrawler is a Rust-based intelligent web crawler that uses LLMs (primarily C
 - Calls `crawl_all_domains()` which processes each domain sequentially
 
 **SmartCrawler** (`src/crawler.rs`):
-- Central orchestrator that manages the crawling workflow
-- Uses Arc<Mutex<Vec<String>>> for `domains` to allow dynamic domain addition during crawling
+- Central orchestrator with two-stage URL selection (keyword ranking + LLM selection)
 - Tracks scraped URLs per domain to avoid duplicates
-- Handles both sitemap-based and fallback crawling strategies
+- Handles sitemap-based and fallback crawling strategies
 
 **LLM Abstraction** (`src/llm.rs`):
 - Defines `LLM` trait for swappable AI providers
-- Currently implemented only by `ClaudeClient`
-- Key methods: `select_urls()`, `analyze_content()`, `send_message()`
+- Key methods: `generate_keywords()`, `select_urls()`, `analyze_content()`, `extract_entities()`
 
-**Crawling Strategy**:
-1. **Sitemap Discovery**: Uses `SitemapParser` to find XML sitemaps
-2. **Fallback Strategy**: If no sitemap, scrapes homepage for links
-3. **LLM URL Selection**: AI selects most relevant URLs based on objective
-4. **Content Scraping**: Uses headless browser via `Browser` wrapper
-5. **Content Analysis**: LLM analyzes scraped content against objective
-
-### Key Design Patterns
-
-**Error Handling**: Custom `CrawlerError` enum that wraps underlying errors from sitemap, LLM, browser, and I/O operations.
-
-**Concurrency**: 
-- `Arc<Mutex<>>` for shared state (domains, scraped URLs)
-- Async/await throughout for I/O operations
-- Single-threaded execution per domain (sequential processing)
-
-**Configuration**: `CrawlerConfig` holds all runtime parameters, with Arc<Mutex<Vec<String>>> for domains to enable dynamic addition.
+**URL Selection Strategy**:
+1. **Sitemap Discovery**: Find XML sitemaps or scrape homepage for links
+2. **Keyword Generation**: LLM generates relevant keywords from objective
+3. **URL Ranking**: Score URLs based on keyword relevance in paths/queries
+4. **LLM Selection**: AI selects best URLs from top-ranked candidates
+5. **Content Analysis**: Extract structured entities matching TypeScript schemas
 
 ## Environment Setup
 
-Requires `ANTHROPIC_API_KEY` environment variable. The application validates this on startup.
-
-Optional: Create `.env` file with:
+Requires `ANTHROPIC_API_KEY` environment variable. Create `.env` file:
 ```
 ANTHROPIC_API_KEY=your_key_here
 ```
-
-## Development Notes
-
-- The project uses a trait-based LLM abstraction but currently only supports Claude
-- Browser automation uses `fantoccini` crate for headless browsing
-- Sitemap parsing handles both regular sitemaps and sitemap indexes
-- URL deduplication is implemented per-domain to avoid re-crawling
-- The crawler can dynamically add domains during execution (though this feature isn't exposed via CLI)
-- Rate limiting is implemented via configurable delays between requests
-- Results are saved in structured JSON format for further analysis
