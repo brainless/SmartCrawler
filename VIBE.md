@@ -337,3 +337,53 @@ GitHub issue #21 requests an enhancement to the `Browser::scrape_url` method to 
 - Extensible entity system for future entity types
 - Confidence scoring for extraction quality assessment
 - Backward compatibility with existing analysis workflow
+
+## Enhanced Entity Extraction with TypeScript Schema Prompts
+
+### User Request
+"Looks great! Now let us change our web page analysis prompt and ask LLM that if it finds data as per the objective then it should return JSON that conforms to the data types we have. We may have to generate TypeScript types from the Rust types."
+
+### Task Plan
+1. Create new branch for enhanced entity extraction with TypeScript types
+2. Update VIBE.md with task details (this section)
+3. Generate TypeScript type definitions from Rust entities:
+   - Create comprehensive TypeScript interfaces matching Rust structs
+   - Include all entity types, enums, and supporting structures
+   - Add proper type annotations and optional fields
+4. Update LLM prompts to reference TypeScript schemas:
+   - Replace generic entity structure examples with precise TypeScript definitions
+   - Provide complete schema for each entity type
+   - Include validation requirements and field constraints
+5. Integrate enhanced prompts into entity extraction:
+   - Update extract_entities method with new schema-aware prompts
+   - Improve JSON parsing validation
+   - Enhance error handling for schema conformance
+6. Test and commit the improvements
+
+### Implementation Details
+- Generate TypeScript interfaces for all Rust entity types
+- Create comprehensive schema documentation in prompts
+- Use TypeScript syntax for better LLM understanding of expected JSON structure
+- Include enum values, optional fields, and nested object schemas
+- Maintain backward compatibility with existing entity extraction
+- Improve extraction accuracy through precise schema definitions
+
+### Expected Benefits
+- Higher accuracy in entity extraction through precise schema guidance
+- Better JSON structure conformance from LLM responses
+- Reduced parsing errors and validation issues
+- Clearer documentation of expected data structures
+- Enhanced type safety in extracted data
+
+### Additional Improvements
+- Updated analyze_content method to also use TypeScript schemas
+- Unified schema-aware approach across both entity extraction and content analysis
+- Enhanced fallback analysis with entity-structured output formatting
+- Consistent data presentation following TypeScript entity organization
+
+### JSON Parsing Robustness Fix
+- Fixed "EOF while parsing a string" JSON parsing errors
+- Added robust JSON extraction from LLM responses that may contain extra text
+- Improved error handling with detailed logging for debugging
+- Enhanced prompt clarity to discourage markdown formatting in JSON responses
+- Added comprehensive tests for JSON extraction edge cases

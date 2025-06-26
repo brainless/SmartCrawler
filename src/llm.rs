@@ -1,5 +1,6 @@
 use crate::claude::ClaudeResponse; // Assuming ClaudeResponse might be generalized later
-use crate::entities::{ExtractedEntity, EntityExtractionResult};
+use crate::entities::{EntityExtractionResult, ExtractedEntity, LLMResponse};
+use crate::typescript_schema::get_typescript_schema;
 use async_trait::async_trait;
 use thiserror::Error; // Added for custom errors within default impls
 
@@ -118,7 +119,8 @@ Selected path numbers:"#,
         objective: &str,
         url: &str,
         content: &str,
-    ) -> Result<String, LlmError> {
+    ) -> Result<LLMResponse, LlmError> {
+        let typescript_schema = get_typescript_schema();
         let prompt = format!(
             r#"You are analyzing web content for a specific objective.
 
@@ -129,17 +131,94 @@ Content (truncated if necessary):
 {}
 
 INSTRUCTIONS:
-1. First, determine if this page contains information that directly relates to the objective
-2. If the objective is NOT clearly met by the content, respond with exactly: "OBJECTIVE_NOT_MET"
-3. If the objective IS met, extract and return ONLY the specific information relevant to the objective
-4. Do not provide key findings, actionable insights, or additional analysis - only the relevant information itself
+1. Carefully analyze the content to determine if it contains information relevant to the objective
+2. Respond ONLY with a valid JSON object that matches the LLMResponse structure
+3. If the objective is NOT clearly met, set is_objective_met to false and results to null
+4. If the objective IS met, set is_objective_met to true and include extracted entities in results array
+5. Each entity in results must conform to the TypeScript schema provided below
+6. Always include a brief analysis explaining your findings
 
-Response format:
-- If objective not met: "OBJECTIVE_NOT_MET"
-- If objective met: Only the relevant information from the content"#,
+RESPONSE FORMAT (JSON ONLY):
+{{
+  "is_objective_met": boolean,
+  "results": ExtractedEntity[] | null,
+  "analysis": "Brief explanation of findings"
+}}
+
+TYPESCRIPT SCHEMA:
+{}
+
+EXAMPLE JSON RESPONSES:
+
+For objective NOT met:
+{{
+  "is_objective_met": false,
+  "results": null,
+  "analysis": "No relevant information found for the given objective"
+}}
+
+For "Find people/contact information" (objective met):
+{{
+  "is_objective_met": true,
+  "results": [
+    {{
+      "type": "Person",
+      "first_name": "John",
+      "last_name": "Smith",
+      "title": "CEO",
+      "company": "Tech Corp",
+      "email": "john.smith@techcorp.com",
+      "phone": "+1-555-0123",
+      "full_name": null,
+      "bio": null,
+      "social_links": []
+    }}
+  ],
+  "analysis": "Found contact information for company executive"
+}}
+
+For "Find events" (objective met):
+{{
+  "is_objective_met": true,
+  "results": [
+    {{
+      "type": "Event",
+      "title": "Tech Conference 2024",
+      "description": "Annual technology conference",
+      "start_date": "2024-03-15",
+      "end_date": "2024-03-17",
+      "start_time": null,
+      "end_time": null,
+      "location": {{
+        "type": "Location",
+        "name": "Convention Center",
+        "city": "San Francisco",
+        "state": "CA",
+        "country": "USA",
+        "address": null,
+        "postal_code": null,
+        "latitude": null,
+        "longitude": null,
+        "venue_type": "Convention Center"
+      }},
+      "organizer": null,
+      "attendees": [],
+      "category": "Technology",
+      "tags": [],
+      "price": null,
+      "registration_url": "https://techconf2024.com",
+      "status": "Upcoming"
+    }}
+  ],
+  "analysis": "Found upcoming technology conference with registration details"
+}}
+
+CRITICAL: Return ONLY the JSON object, no additional text, explanations, or markdown formatting.
+Start your response with {{ and end with }}. Do not wrap in code blocks."#,
             url,
             objective,
-            content.chars().take(8000).collect::<String>()
+            content.chars().take(10000).collect::<String>(),
+            typescript_schema
         );
 
         let response = self.send_message(&prompt).await?;
@@ -151,15 +230,26 @@ Response format:
             .text
             .clone();
 
-        // Check if the objective was not met and return an error
-        if content_text.contains("OBJECTIVE_NOT_MET") {
-            return Err(Box::new(DefaultLlmImplError::ObjectiveNotMet(format!(
-                "Objective '{}' not clearly met in content from {}",
-                objective, url
-            ))) as LlmError);
-        }
+        tracing::debug!("Raw LLM response for content analysis: {}", content_text);
 
-        Ok(content_text)
+        // Extract JSON from the response
+        let json_str = extract_json_from_response(&content_text).ok_or_else(|| {
+            tracing::warn!("No valid JSON found in LLM response for {}", url);
+            Box::new(DefaultLlmImplError::ObjectiveNotMet(
+                "No valid JSON object found in LLM response".to_string(),
+            )) as LlmError
+        })?;
+
+        tracing::debug!("Extracted JSON for parsing: {}", json_str);
+
+        // Parse the JSON response
+        let llm_response: LLMResponse = serde_json::from_str(&json_str).map_err(|e| {
+            tracing::error!("JSON parsing failed for {}: {}", url, e);
+            tracing::error!("Problematic JSON: {}", json_str);
+            Box::new(DefaultLlmImplError::JsonParseFailed(e)) as LlmError
+        })?;
+
+        Ok(llm_response)
     }
 
     /// Extracts structured entities from web content based on the objective.
@@ -179,29 +269,38 @@ Content (truncated if necessary):
 {}
 
 INSTRUCTIONS:
-1. Analyze the content and extract structured data that relates to the objective
-2. Return the data as a JSON object with the following structure:
+1. Carefully analyze the content to find information that directly relates to the objective
+2. Extract ONLY entities that are clearly present and relevant to the objective
+3. Return a JSON object that strictly conforms to the TypeScript schema provided below
+4. Ensure all required fields are present and all data types match the schema
+5. Use null for optional fields when information is not available
+
+RESPONSE FORMAT:
+You must return a JSON object with this exact structure:
 {{
-  "entities": [
-    // Array of entity objects with a "type" field indicating the entity type
-  ],
-  "raw_analysis": "Brief description of what was found",
-  "extraction_confidence": 0.85 // Float between 0.0 and 1.0
+  "entities": ExtractedEntity[],
+  "raw_analysis": string,
+  "extraction_confidence": number // 0.0 to 1.0
 }}
 
-ENTITY TYPES AND STRUCTURES:
-- Person: {{"type": "Person", "first_name": "...", "last_name": "...", "title": "...", "company": "...", "email": "...", "phone": "..."}}
-- Location: {{"type": "Location", "name": "...", "address": "...", "city": "...", "state": "...", "country": "..."}}
-- Event: {{"type": "Event", "title": "...", "description": "...", "start_date": "YYYY-MM-DD", "location": {{...}}, "price": {{"amount": 0.0, "currency": "USD"}}}}
-- Product: {{"type": "Product", "name": "...", "description": "...", "price": {{"amount": 0.0, "currency": "USD"}}, "brand": "...", "category": "..."}}
-- Organization: {{"type": "Organization", "name": "...", "description": "...", "website": "...", "industry": "..."}}
-- NewsArticle: {{"type": "NewsArticle", "headline": "...", "summary": "...", "author": {{...}}, "publication_date": "..."}}
-- JobListing: {{"type": "JobListing", "title": "...", "company": {{...}}, "location": {{...}}, "employment_type": "FullTime"}}
+TYPESCRIPT SCHEMA:
+{}
 
-Return ONLY the JSON object, no additional text or explanation."#,
+IMPORTANT GUIDELINES:
+- Each entity MUST have a "type" field that exactly matches one of the TypeScript interface names
+- Use proper data types: strings for text, numbers for numeric values, booleans for true/false
+- For dates, use ISO 8601 format (YYYY-MM-DDTHH:mm:ssZ) or YYYY-MM-DD for date-only fields
+- For nested objects (like Location in Event), include the full object structure with type field
+- Only extract entities if you have confidence ≥ 0.6 in the accuracy of the extracted data
+- If no relevant entities are found, return an empty entities array
+- The raw_analysis should briefly describe what entities were found and why
+
+CRITICAL: Return ONLY the JSON object, no additional text, explanations, or markdown formatting. 
+Start your response with {{ and end with }}. Do not wrap in code blocks or add any other text."#,
             url,
             objective,
-            content.chars().take(12000).collect::<String>()
+            content.chars().take(12000).collect::<String>(),
+            get_typescript_schema()
         );
 
         let response = self.send_message(&prompt).await?;
@@ -213,16 +312,32 @@ Return ONLY the JSON object, no additional text or explanation."#,
             .text
             .clone();
 
+        tracing::debug!("Raw LLM response for entity extraction: {}", content_text);
+
+        // Extract JSON from the response - the LLM might include extra text
+        let json_str = extract_json_from_response(&content_text).ok_or_else(|| {
+            tracing::warn!("No valid JSON found in LLM response for {}", url);
+            Box::new(DefaultLlmImplError::ObjectiveNotMet(
+                "No valid JSON object found in LLM response".to_string(),
+            )) as LlmError
+        })?;
+
+        tracing::debug!("Extracted JSON for parsing: {}", json_str);
+
         // Parse the JSON response
-        let extraction_data: serde_json::Value = serde_json::from_str(&content_text)
-            .map_err(|e| Box::new(DefaultLlmImplError::JsonParseFailed(e)) as LlmError)?;
+        let extraction_data: serde_json::Value = serde_json::from_str(&json_str).map_err(|e| {
+            tracing::error!("JSON parsing failed for {}: {}", url, e);
+            tracing::error!("Problematic JSON: {}", json_str);
+            Box::new(DefaultLlmImplError::JsonParseFailed(e)) as LlmError
+        })?;
 
         let mut result = EntityExtractionResult::new(url.to_string(), objective.to_string());
-        
+
         // Extract entities
         if let Some(entities_array) = extraction_data["entities"].as_array() {
             for entity_value in entities_array {
-                if let Ok(entity) = serde_json::from_value::<ExtractedEntity>(entity_value.clone()) {
+                if let Ok(entity) = serde_json::from_value::<ExtractedEntity>(entity_value.clone())
+                {
                     result.entities.push(entity);
                 }
             }
@@ -246,4 +361,116 @@ Return ONLY the JSON object, no additional text or explanation."#,
     /// if other LLMs have significantly different response structures.
     /// This method MUST be implemented by concrete types.
     async fn send_message(&self, message: &str) -> Result<ClaudeResponse, LlmError>;
+}
+
+/// Extract JSON object from LLM response that might contain extra text
+fn extract_json_from_response(response: &str) -> Option<String> {
+    // First, try to find a JSON object starting with { and ending with }
+    let trimmed = response.trim();
+
+    // Case 1: Response is pure JSON (starts and ends with braces)
+    if trimmed.starts_with('{') && trimmed.ends_with('}') {
+        return Some(trimmed.to_string());
+    }
+
+    // Case 2: JSON is embedded in the response - find the first complete JSON object
+    if let Some(start) = trimmed.find('{') {
+        let mut brace_count = 0;
+        let mut in_string = false;
+        let mut escaped = false;
+
+        for (i, ch) in trimmed[start..].char_indices() {
+            match ch {
+                '"' if !escaped => in_string = !in_string,
+                '\\' if in_string => escaped = !escaped,
+                '{' if !in_string => brace_count += 1,
+                '}' if !in_string => {
+                    brace_count -= 1;
+                    if brace_count == 0 {
+                        // Found complete JSON object
+                        return Some(trimmed[start..start + i + 1].to_string());
+                    }
+                }
+                _ => escaped = false,
+            }
+
+            if ch != '\\' {
+                escaped = false;
+            }
+        }
+    }
+
+    // Case 3: Try to find JSON between code blocks or other markers
+    for marker in ["```json", "```", "`"] {
+        if let Some(start_pos) = trimmed.find(marker) {
+            let after_marker = &trimmed[start_pos + marker.len()..];
+            if let Some(json_start) = after_marker.find('{') {
+                let json_part = &after_marker[json_start..];
+                if let Some(end_marker_pos) = json_part.find("```") {
+                    let potential_json = &json_part[..end_marker_pos].trim();
+                    if potential_json.starts_with('{') && potential_json.ends_with('}') {
+                        return Some(potential_json.to_string());
+                    }
+                } else if json_part.starts_with('{') && json_part.contains('}') {
+                    // Try to extract complete JSON without end marker
+                    return extract_json_from_response(json_part);
+                }
+            }
+        }
+    }
+
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::extract_json_from_response;
+
+    #[test]
+    fn test_extract_pure_json() {
+        let response = r#"{"entities": [], "raw_analysis": "test", "extraction_confidence": 0.5}"#;
+        let result = extract_json_from_response(response);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), response);
+    }
+
+    #[test]
+    fn test_extract_json_with_extra_text() {
+        let response = r#"Here is the analysis:
+        {"entities": [], "raw_analysis": "test", "extraction_confidence": 0.5}
+        That's the result."#;
+        let result = extract_json_from_response(response);
+        assert!(result.is_some());
+        assert_eq!(
+            result.unwrap(),
+            r#"{"entities": [], "raw_analysis": "test", "extraction_confidence": 0.5}"#
+        );
+    }
+
+    #[test]
+    fn test_extract_json_from_code_block() {
+        let response = r#"```json
+        {"entities": [], "raw_analysis": "test", "extraction_confidence": 0.5}
+        ```"#;
+        let result = extract_json_from_response(response);
+        assert!(result.is_some());
+        assert_eq!(
+            result.unwrap(),
+            r#"{"entities": [], "raw_analysis": "test", "extraction_confidence": 0.5}"#
+        );
+    }
+
+    #[test]
+    fn test_extract_json_no_valid_json() {
+        let response = "This is just text without any JSON";
+        let result = extract_json_from_response(response);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_extract_json_malformed() {
+        let response = r#"{"entities": [], "raw_analysis": "test""#; // Missing closing brace
+        let result = extract_json_from_response(response);
+        assert!(result.is_none());
+    }
 }
