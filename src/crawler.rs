@@ -387,7 +387,7 @@ impl SmartCrawler {
                                             .unwrap_or(0);
                                         analysis.push(format!(
                                             "URL: {}\nObjective Met: {}\nFound {} results\nAnalysis: {}",
-                                            web_page.url, 
+                                            web_page.url,
                                             llm_response.is_objective_met,
                                             results_count,
                                             llm_response.analysis.unwrap_or_else(|| "No analysis provided".to_string())
