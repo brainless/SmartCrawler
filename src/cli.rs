@@ -1,3 +1,4 @@
+use crate::url_ranking::UrlRankingConfig;
 use clap::{Arg, Command};
 use std::env;
 use std::sync::{Arc, Mutex};
@@ -10,6 +11,8 @@ pub struct CrawlerConfig {
     pub delay_ms: u64,
     pub output_file: Option<String>,
     pub verbose: bool,
+    pub url_ranking_config: UrlRankingConfig,
+    pub enable_keyword_filtering: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -90,6 +93,19 @@ impl CrawlerConfig {
                     .help("Enable verbose logging")
                     .action(clap::ArgAction::SetTrue)
             )
+            .arg(
+                Arg::new("disable-keyword-filtering")
+                    .long("disable-keyword-filtering")
+                    .help("Disable keyword-based URL pre-filtering")
+                    .action(clap::ArgAction::SetTrue)
+            )
+            .arg(
+                Arg::new("candidate-multiplier")
+                    .long("candidate-multiplier")
+                    .value_name("NUMBER")
+                    .help("Multiplier for candidate URLs sent to LLM (candidate_count = max_urls * multiplier)")
+                    .default_value("3")
+            )
             .get_matches();
 
         let verbose = matches.get_flag("verbose");
@@ -134,6 +150,19 @@ impl CrawlerConfig {
 
         let output_file = matches.get_one::<String>("output").cloned();
 
+        let enable_keyword_filtering = !matches.get_flag("disable-keyword-filtering");
+
+        let candidate_multiplier = matches
+            .get_one::<String>("candidate-multiplier")
+            .unwrap()
+            .parse()
+            .unwrap_or(3);
+
+        let url_ranking_config = UrlRankingConfig {
+            candidate_multiplier,
+            ..UrlRankingConfig::default()
+        };
+
         AppMode::Crawl(CrawlerConfig {
             objective,
             domains: Arc::new(Mutex::new(domains)),
@@ -141,6 +170,8 @@ impl CrawlerConfig {
             delay_ms,
             output_file,
             verbose,
+            url_ranking_config,
+            enable_keyword_filtering,
         })
     }
 }

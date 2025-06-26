@@ -387,3 +387,40 @@ GitHub issue #21 requests an enhancement to the `Browser::scrape_url` method to 
 - Improved error handling with detailed logging for debugging
 - Enhanced prompt clarity to discourage markdown formatting in JSON responses
 - Added comprehensive tests for JSON extraction edge cases
+
+## Improve URL Selection Logic - Issue #27
+
+### User Request
+Implement improved URL selection logic that uses LLM to generate keywords based on the crawling objective, then ranks URLs by keyword relevance before LLM selection.
+
+### Issue Analysis
+For websites with large numbers of URLs from sitemaps or homepages, the current approach sends too many URLs to the LLM for selection. This can be inefficient and may not yield the best results.
+
+### Task Plan
+1. Create new branch for GitHub issue #27 improvements
+2. Update VIBE.md with task details (this section)
+3. Add new LLM method `generate_keywords()` to extract relevant keywords from objective
+4. Implement URL scoring and ranking system based on keyword matches:
+   - Score URLs by keyword matches in path, query parameters, and URL structure
+   - Sort URLs by relevance score before sending to LLM
+   - Limit URLs sent to LLM to top X candidates (where X = max_urls * multiplier)
+5. Integrate two-stage URL selection process into crawler:
+   - Stage 1: Keyword-based filtering and ranking
+   - Stage 2: LLM-based final selection from top candidates
+6. Add configuration options for keyword-based filtering parameters
+7. Test with various objectives and URL sets
+8. Ensure backward compatibility with existing URL selection logic
+
+### Implementation Details
+- `generate_keywords()` method: Extract 5-10 relevant keywords from crawling objective
+- URL scoring algorithm: Score based on keyword matches, path depth, and structure
+- Ranking system: Sort URLs by score, take top N candidates for LLM selection
+- Two-stage selection: Keyword filtering → LLM selection for higher quality results
+- Configuration: Add multiplier setting for candidate URL limit (e.g., max_urls * 3)
+
+### Expected Benefits
+- Better URL selection quality through objective-specific keyword pre-filtering
+- Reduced LLM API calls and costs by sending fewer, more relevant URLs
+- Faster crawling with more targeted URL selection
+- Improved handling of large sitemaps and homepage link collections
+- Maintained accuracy while improving efficiency

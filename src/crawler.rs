@@ -4,6 +4,7 @@ use crate::content::ScrapedWebPage;
 use crate::entities::EntityExtractionResult;
 use crate::llm::{LlmError, LLM};
 use crate::sitemap::SitemapParser;
+use crate::url_ranking::UrlRanker;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
@@ -253,17 +254,56 @@ impl SmartCrawler {
         // Add the remaining URLs from urls_one_level_deeper
         urls_to_analyze.extend(urls_one_level_deeper);
 
-        // Step 2: Use LLM to select relevant URLs
-        tracing::info!("Asking LLM to select relevant URLs for: {}", domain);
-        let mut selected_urls = self
-            .llm_client // Changed from claude_client
-            .select_urls(
-                &self.config.objective,
-                &urls_to_analyze, // This is Vec<String>, fits &[String]
-                domain,
-                self.config.max_urls_per_domain,
-            )
-            .await?;
+        // Step 2: URL Selection (with optional keyword-based pre-filtering)
+        let mut selected_urls = if self.config.enable_keyword_filtering {
+            // Two-stage selection: keyword ranking + LLM selection
+            tracing::info!(
+                "Using two-stage URL selection (keywords + LLM) for: {}",
+                domain
+            );
+
+            // Stage 1: Generate keywords and rank URLs
+            let keywords = self
+                .llm_client
+                .generate_keywords(&self.config.objective, domain)
+                .await?;
+
+            let url_ranker = UrlRanker::new(self.config.url_ranking_config.clone());
+            let top_candidates =
+                url_ranker.rank_urls(&urls_to_analyze, &keywords, self.config.max_urls_per_domain);
+
+            tracing::info!(
+                "Generated {} keywords, ranked {} URLs to {} candidates for LLM selection",
+                keywords.len(),
+                urls_to_analyze.len(),
+                top_candidates.len()
+            );
+
+            // Stage 2: LLM selection from top candidates
+            if top_candidates.is_empty() {
+                Vec::new()
+            } else {
+                self.llm_client
+                    .select_urls(
+                        &self.config.objective,
+                        &top_candidates,
+                        domain,
+                        self.config.max_urls_per_domain,
+                    )
+                    .await?
+            }
+        } else {
+            // Traditional single-stage LLM selection
+            tracing::info!("Using traditional LLM-only URL selection for: {}", domain);
+            self.llm_client
+                .select_urls(
+                    &self.config.objective,
+                    &urls_to_analyze,
+                    domain,
+                    self.config.max_urls_per_domain,
+                )
+                .await?
+        };
 
         // Step 2.5: Filter out already scraped URLs and track unique URLs (using path+query only)
         {
