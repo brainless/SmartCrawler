@@ -6,3 +6,4 @@ pub mod crawler;
 pub mod entities;
 pub mod llm;
 pub mod sitemap;
+pub mod typescript_schema;

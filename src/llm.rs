@@ -1,5 +1,6 @@
 use crate::claude::ClaudeResponse; // Assuming ClaudeResponse might be generalized later
 use crate::entities::{ExtractedEntity, EntityExtractionResult};
+use crate::typescript_schema::TYPESCRIPT_SCHEMA;
 use async_trait::async_trait;
 use thiserror::Error; // Added for custom errors within default impls
 
@@ -129,17 +130,33 @@ Content (truncated if necessary):
 {}
 
 INSTRUCTIONS:
-1. First, determine if this page contains information that directly relates to the objective
+1. Carefully analyze the content to determine if it contains information relevant to the objective
 2. If the objective is NOT clearly met by the content, respond with exactly: "OBJECTIVE_NOT_MET"
-3. If the objective IS met, extract and return ONLY the specific information relevant to the objective
-4. Do not provide key findings, actionable insights, or additional analysis - only the relevant information itself
+3. If the objective IS met, extract and summarize the relevant information in a structured way
+4. Focus on providing specific, actionable data that fulfills the objective
+5. If looking for entities (people, locations, events, etc.), provide structured summaries
 
 Response format:
-- If objective not met: "OBJECTIVE_NOT_MET"
-- If objective met: Only the relevant information from the content"#,
+- If objective not met: "OBJECTIVE_NOT_MET" 
+- If objective met: Structured summary of relevant information with clear data points
+
+EXAMPLE GOOD RESPONSES:
+For "Find contact information":
+- Contact: John Smith, CEO
+- Email: john@company.com  
+- Phone: +1-555-0123
+- Address: 123 Main St, San Francisco, CA
+
+For "Find upcoming events":
+- Event: Tech Conference 2024
+- Date: March 15-17, 2024
+- Location: Convention Center, San Francisco
+- Registration: https://techconf2024.com
+
+Provide clear, structured information that directly addresses the objective."#,
             url,
             objective,
-            content.chars().take(8000).collect::<String>()
+            content.chars().take(10000).collect::<String>()
         );
 
         let response = self.send_message(&prompt).await?;
@@ -179,29 +196,37 @@ Content (truncated if necessary):
 {}
 
 INSTRUCTIONS:
-1. Analyze the content and extract structured data that relates to the objective
-2. Return the data as a JSON object with the following structure:
+1. Carefully analyze the content to find information that directly relates to the objective
+2. Extract ONLY entities that are clearly present and relevant to the objective
+3. Return a JSON object that strictly conforms to the TypeScript schema provided below
+4. Ensure all required fields are present and all data types match the schema
+5. Use null for optional fields when information is not available
+
+RESPONSE FORMAT:
+You must return a JSON object with this exact structure:
 {{
-  "entities": [
-    // Array of entity objects with a "type" field indicating the entity type
-  ],
-  "raw_analysis": "Brief description of what was found",
-  "extraction_confidence": 0.85 // Float between 0.0 and 1.0
+  "entities": ExtractedEntity[],
+  "raw_analysis": string,
+  "extraction_confidence": number // 0.0 to 1.0
 }}
 
-ENTITY TYPES AND STRUCTURES:
-- Person: {{"type": "Person", "first_name": "...", "last_name": "...", "title": "...", "company": "...", "email": "...", "phone": "..."}}
-- Location: {{"type": "Location", "name": "...", "address": "...", "city": "...", "state": "...", "country": "..."}}
-- Event: {{"type": "Event", "title": "...", "description": "...", "start_date": "YYYY-MM-DD", "location": {{...}}, "price": {{"amount": 0.0, "currency": "USD"}}}}
-- Product: {{"type": "Product", "name": "...", "description": "...", "price": {{"amount": 0.0, "currency": "USD"}}, "brand": "...", "category": "..."}}
-- Organization: {{"type": "Organization", "name": "...", "description": "...", "website": "...", "industry": "..."}}
-- NewsArticle: {{"type": "NewsArticle", "headline": "...", "summary": "...", "author": {{...}}, "publication_date": "..."}}
-- JobListing: {{"type": "JobListing", "title": "...", "company": {{...}}, "location": {{...}}, "employment_type": "FullTime"}}
+TYPESCRIPT SCHEMA:
+{}
+
+IMPORTANT GUIDELINES:
+- Each entity MUST have a "type" field that exactly matches one of the TypeScript interface names
+- Use proper data types: strings for text, numbers for numeric values, booleans for true/false
+- For dates, use ISO 8601 format (YYYY-MM-DDTHH:mm:ssZ) or YYYY-MM-DD for date-only fields
+- For nested objects (like Location in Event), include the full object structure with type field
+- Only extract entities if you have confidence ≥ 0.6 in the accuracy of the extracted data
+- If no relevant entities are found, return an empty entities array
+- The raw_analysis should briefly describe what entities were found and why
 
 Return ONLY the JSON object, no additional text or explanation."#,
             url,
             objective,
-            content.chars().take(12000).collect::<String>()
+            content.chars().take(12000).collect::<String>(),
+            TYPESCRIPT_SCHEMA
         );
 
         let response = self.send_message(&prompt).await?;
