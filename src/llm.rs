@@ -43,8 +43,7 @@ IMPORTANT: Return ONLY a JSON array of keywords as strings.
 Example format: ["pricing", "price", "cost", "plans", "subscription", "billing"]
 
 Keywords:"#,
-            domain,
-            objective
+            domain, objective
         );
 
         let response = self.send_message(&prompt).await?;
@@ -343,7 +342,7 @@ IMPORTANT GUIDELINES:
 - If no relevant entities are found, return an empty entities array
 - The raw_analysis should briefly describe what entities were found and why
 
-CRITICAL: Return ONLY the JSON object, no additional text, explanations, or markdown formatting. 
+CRITICAL: Return ONLY the JSON object, no additional text, explanations, or markdown formatting.
 Start your response with {{ and end with }}. Do not wrap in code blocks or add any other text."#,
             url,
             objective,
@@ -528,11 +527,11 @@ mod tests {
         // This is more of a structure test since we can't easily mock the LLM
         let objective = "Find pricing information";
         let domain = "example.com";
-        
+
         // Check that the prompt contains expected elements
         assert!(objective.contains("pricing"));
         assert!(domain.contains("example"));
-        
+
         // This test just ensures the method signature is correct
         // Real testing would require mocking the LLM response
     }

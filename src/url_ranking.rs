@@ -56,12 +56,7 @@ impl UrlRanker {
     }
 
     /// Score and rank URLs based on keyword relevance
-    pub fn rank_urls(
-        &self,
-        urls: &[String],
-        keywords: &[String],
-        max_urls: usize,
-    ) -> Vec<String> {
+    pub fn rank_urls(&self, urls: &[String], keywords: &[String], max_urls: usize) -> Vec<String> {
         let candidate_limit = max_urls * self.config.candidate_multiplier;
 
         // Score all URLs
@@ -71,7 +66,11 @@ impl UrlRanker {
             .collect();
 
         // Sort by score (highest first)
-        scored_urls.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        scored_urls.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         // Take top candidates
         let top_urls: Vec<String> = scored_urls
@@ -98,14 +97,17 @@ impl UrlRanker {
         let parsed_url = Url::parse(url).ok()?;
         let path = parsed_url.path().to_lowercase();
         let query = parsed_url.query().map(|q| q.to_lowercase());
-        let depth = path.split('/').filter(|segment| !segment.is_empty()).count();
+        let depth = path
+            .split('/')
+            .filter(|segment| !segment.is_empty())
+            .count();
 
         let mut score = 0.0;
 
         // Score based on keyword matches in path
         for keyword in keywords {
             let keyword_lower = keyword.to_lowercase();
-            
+
             // Path scoring
             if path.contains(&keyword_lower) {
                 if path.split('/').any(|segment| segment == keyword_lower) {
@@ -120,9 +122,10 @@ impl UrlRanker {
             // Query parameter scoring
             if let Some(ref query_str) = query {
                 if query_str.contains(&keyword_lower) {
-                    if query_str.split('&').any(|param| {
-                        param.split('=').any(|part| part == keyword_lower)
-                    }) {
+                    if query_str
+                        .split('&')
+                        .any(|param| param.split('=').any(|part| part == keyword_lower))
+                    {
                         // Exact match in query parameter
                         score += self.config.exact_match_bonus * self.config.query_weight;
                     } else {
@@ -150,11 +153,7 @@ impl UrlRanker {
     }
 
     /// Get statistics about URL scoring
-    pub fn get_scoring_stats(
-        &self,
-        urls: &[String],
-        keywords: &[String],
-    ) -> UrlScoringStats {
+    pub fn get_scoring_stats(&self, urls: &[String], keywords: &[String]) -> UrlScoringStats {
         let scored_urls: Vec<ScoredUrl> = urls
             .iter()
             .filter_map(|url| self.score_url(url, keywords))
@@ -202,8 +201,10 @@ mod tests {
     fn test_url_scoring_exact_match() {
         let ranker = UrlRanker::with_default_config();
         let keywords = vec!["pricing".to_string(), "plans".to_string()];
-        
-        let scored = ranker.score_url("https://example.com/pricing", &keywords).unwrap();
+
+        let scored = ranker
+            .score_url("https://example.com/pricing", &keywords)
+            .unwrap();
         assert!(scored.score > 0.0);
         assert_eq!(scored.path, "/pricing");
     }
@@ -212,8 +213,10 @@ mod tests {
     fn test_url_scoring_partial_match() {
         let ranker = UrlRanker::with_default_config();
         let keywords = vec!["price".to_string()];
-        
-        let scored = ranker.score_url("https://example.com/price-info", &keywords).unwrap();
+
+        let scored = ranker
+            .score_url("https://example.com/price-info", &keywords)
+            .unwrap();
         assert!(scored.score > 0.0);
     }
 
@@ -221,8 +224,10 @@ mod tests {
     fn test_url_scoring_query_params() {
         let ranker = UrlRanker::with_default_config();
         let keywords = vec!["pricing".to_string()];
-        
-        let scored = ranker.score_url("https://example.com/info?category=pricing", &keywords).unwrap();
+
+        let scored = ranker
+            .score_url("https://example.com/info?category=pricing", &keywords)
+            .unwrap();
         assert!(scored.score > 0.0);
     }
 
@@ -236,9 +241,9 @@ mod tests {
             "https://example.com/contact".to_string(),
         ];
         let keywords = vec!["pricing".to_string(), "plans".to_string()];
-        
+
         let ranked = ranker.rank_urls(&urls, &keywords, 2);
-        
+
         // Should prioritize URLs with keyword matches
         assert!(ranked.contains(&"https://example.com/pricing".to_string()));
         assert!(ranked.contains(&"https://example.com/pricing/plans".to_string()));
@@ -251,9 +256,9 @@ mod tests {
             .map(|i| format!("https://example.com/page{}", i))
             .collect();
         let keywords = vec!["test".to_string()];
-        
+
         let ranked = ranker.rank_urls(&urls, &keywords, 2);
-        
+
         // Should limit to candidate_multiplier * max_urls = 3 * 2 = 6
         assert_eq!(ranked.len(), 6);
     }
@@ -266,9 +271,9 @@ mod tests {
             "https://example.com/about".to_string(),
         ];
         let keywords = vec!["pricing".to_string()];
-        
+
         let stats = ranker.get_scoring_stats(&urls, &keywords);
-        
+
         assert_eq!(stats.total_urls, 2);
         assert!(stats.max_score > stats.min_score);
     }

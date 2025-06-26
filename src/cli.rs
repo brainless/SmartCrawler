@@ -1,7 +1,7 @@
+use crate::url_ranking::UrlRankingConfig;
 use clap::{Arg, Command};
 use std::env;
 use std::sync::{Arc, Mutex};
-use crate::url_ranking::UrlRankingConfig;
 
 #[derive(Debug, Clone)]
 pub struct CrawlerConfig {
@@ -151,7 +151,7 @@ impl CrawlerConfig {
         let output_file = matches.get_one::<String>("output").cloned();
 
         let enable_keyword_filtering = !matches.get_flag("disable-keyword-filtering");
-        
+
         let candidate_multiplier = matches
             .get_one::<String>("candidate-multiplier")
             .unwrap()
