@@ -132,31 +132,53 @@ Content (truncated if necessary):
 INSTRUCTIONS:
 1. Carefully analyze the content to determine if it contains information relevant to the objective
 2. If the objective is NOT clearly met by the content, respond with exactly: "OBJECTIVE_NOT_MET"
-3. If the objective IS met, extract and summarize the relevant information in a structured way
-4. Focus on providing specific, actionable data that fulfills the objective
-5. If looking for entities (people, locations, events, etc.), provide structured summaries
+3. If the objective IS met, extract and present the relevant information using structured formats based on entity types
+4. When you find entities, use the TypeScript schema structure below as a guide for organizing the information
+5. Present the data in a human-readable format but follow the logical structure of the entities
 
-Response format:
-- If objective not met: "OBJECTIVE_NOT_MET" 
-- If objective met: Structured summary of relevant information with clear data points
+RESPONSE FORMAT:
+- If objective not met: "OBJECTIVE_NOT_MET"
+- If objective met: Structured summary using entity-based organization
 
-EXAMPLE GOOD RESPONSES:
-For "Find contact information":
-- Contact: John Smith, CEO
-- Email: john@company.com  
+ENTITY STRUCTURE REFERENCE:
+{}
+
+EXAMPLE STRUCTURED RESPONSES:
+
+For "Find people/contact information":
+PERSON: John Smith
+- Title: CEO
+- Company: Tech Corp
+- Email: john.doe@techcorp.com
 - Phone: +1-555-0123
-- Address: 123 Main St, San Francisco, CA
 
-For "Find upcoming events":
-- Event: Tech Conference 2024
-- Date: March 15-17, 2024
-- Location: Convention Center, San Francisco
+For "Find events":
+EVENT: Tech Conference 2024
+- Description: Annual technology conference
+- Dates: March 15-17, 2024
+- Location: Convention Center, San Francisco, CA
 - Registration: https://techconf2024.com
+- Status: Upcoming
 
-Provide clear, structured information that directly addresses the objective."#,
+For "Find products":
+PRODUCT: Wireless Headphones
+- Brand: TechBrand
+- Price: $199.99 USD
+- Description: High-quality wireless headphones
+- Availability: In Stock
+
+For "Find organizations/companies":
+ORGANIZATION: Tech Corp
+- Industry: Technology
+- Website: https://techcorp.com
+- Description: Leading technology company
+- Contact: info@techcorp.com
+
+Use this structured approach to present clear, organized information that directly addresses the objective."#,
             url,
             objective,
-            content.chars().take(10000).collect::<String>()
+            content.chars().take(10000).collect::<String>(),
+            TYPESCRIPT_SCHEMA
         );
 
         let response = self.send_message(&prompt).await?;

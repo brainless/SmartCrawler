@@ -374,3 +374,9 @@ GitHub issue #21 requests an enhancement to the `Browser::scrape_url` method to 
 - Reduced parsing errors and validation issues
 - Clearer documentation of expected data structures
 - Enhanced type safety in extracted data
+
+### Additional Improvements
+- Updated analyze_content method to also use TypeScript schemas
+- Unified schema-aware approach across both entity extraction and content analysis
+- Enhanced fallback analysis with entity-structured output formatting
+- Consistent data presentation following TypeScript entity organization
