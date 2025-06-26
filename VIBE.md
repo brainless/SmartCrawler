@@ -424,3 +424,57 @@ For websites with large numbers of URLs from sitemaps or homepages, the current 
 - Faster crawling with more targeted URL selection
 - Improved handling of large sitemaps and homepage link collections
 - Maintained accuracy while improving efficiency
+
+## One Pager Product Website - Issue #29
+
+### User Request
+Create a simple one pager website in a `website` directory using Vite and small libraries for static hosting.
+
+### Issue Analysis
+Need to create a product landing page that:
+- Uses Vite as build tool with minimal, lightweight libraries
+- Designed for static site hosting
+- Describes SmartCrawler product based on README content
+- Includes semantic HTML structure with proper navigation
+- Features hero section with screenshot placeholder
+- Contains demo video section with YouTube placeholder
+
+### Task Plan
+1. Create new branch for GitHub issue #29
+2. Update VIBE.md with task details (this section)
+3. Set up Vite project in `website` directory:
+   - Initialize with minimal dependencies
+   - Configure for static site generation
+   - Choose lightweight CSS framework or vanilla CSS
+4. Create semantic HTML structure:
+   - Navigation menu for major sections
+   - Hero section with CTA and screenshot placeholder
+   - Demo video section with YouTube embed placeholder
+   - Feature sections based on README content
+   - Installation/usage instructions
+   - Footer with links
+5. Style the website:
+   - Modern, clean design
+   - Responsive layout for mobile/desktop
+   - Professional appearance suitable for developer tool
+6. Test and optimize for static hosting
+7. Commit and push the website
+
+### Implementation Details
+- **Build Tool**: Vite for fast development and optimized builds
+- **Libraries**: Minimal dependencies, prefer vanilla JS/CSS or lightweight alternatives
+- **Content**: Extract product description and features from README.md
+- **Structure**: Single page with smooth scrolling navigation
+- **Hosting**: Optimized for static site deployment (GitHub Pages, Netlify, etc.)
+- **Assets**: Placeholder images and demo video for initial version
+
+### Expected Deliverables
+- Complete one-page website in `website/` directory
+- Vite configuration for static builds
+- Semantic HTML with accessibility considerations
+- Responsive CSS styling
+- Navigation menu linking to page sections
+- Hero section with product overview and screenshot placeholder
+- Demo video section with YouTube placeholder
+- Installation and usage instructions
+- Professional appearance suitable for open source project
