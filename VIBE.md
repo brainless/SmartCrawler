@@ -283,3 +283,57 @@ GitHub issue #21 requests an enhancement to the `Browser::scrape_url` method to 
 - Detect when page bottom is reached to avoid unnecessary scrolling
 - Ensure graceful handling of scroll failures or timeouts
 - Log scrolling progress for debugging and monitoring
+
+## Typed Entity Extraction Implementation
+
+### User Request
+"In the crawler, I want to get data that is typed. So if objective needs people, then we should give a struct that is People with first and last name, etc. Please create data types for common entities that describe real world entities like People, Date, Event, Location, etc."
+
+### Task Plan
+1. Create new branch for typed entity extraction feature
+2. Update VIBE.md with task details (this section)
+3. Analyze current codebase structure and data handling approach
+4. Create comprehensive entity data types for common real-world entities:
+   - Person (name, title, company, contact info)
+   - Location (address, coordinates, venue details)
+   - Event (title, dates, location, organizer, pricing)
+   - Product (name, price, brand, specifications, reviews)
+   - Organization (company details, industry, employees)
+   - NewsArticle (headlines, content, publication info)
+   - JobListing (position details, salary, employment type)
+5. Integrate typed entities with LLM analysis results:
+   - Extend LLM trait with entity extraction method
+   - Add structured JSON extraction with confidence scoring
+   - Implement fallback to original text analysis
+6. Update crawler to use typed results:
+   - Modify CrawlResult to include extracted entities
+   - Enhance console output for entity display
+   - Maintain backward compatibility
+7. Test compilation and fix any errors
+8. Commit and push the improvements
+
+### Implementation Details
+- All entities implement Serialize, Deserialize, Debug, Clone, PartialEq
+- ExtractedEntity enum provides type-safe entity variants  
+- EntityExtractionResult tracks extraction metadata and confidence (0.0-1.0)
+- Type-safe accessor methods: get_persons(), get_locations(), etc.
+- Structured JSON prompts for reliable entity extraction
+- Enhanced console output with entity counts and confidence scores
+- JSON output includes structured entity data alongside original analysis
+- Added chrono dependency for DateTime handling
+- Fixed clippy warnings for code quality
+
+### Files Modified
+- `src/entities.rs` - New comprehensive entity definitions
+- `src/lib.rs` - Added entities module export
+- `src/llm.rs` - Added extract_entities method to LLM trait
+- `src/crawler.rs` - Integrated entity extraction into crawl workflow
+- `src/main.rs` - Enhanced console output for entity display
+- `Cargo.toml` - Added chrono dependency for DateTime support
+
+### Benefits
+- Structured, typed data extraction instead of unstructured text
+- Type safety for entity handling and processing
+- Extensible entity system for future entity types
+- Confidence scoring for extraction quality assessment
+- Backward compatibility with existing analysis workflow

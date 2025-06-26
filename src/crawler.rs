@@ -1,6 +1,7 @@
 use crate::browser::Browser;
 use crate::cli::CrawlerConfig;
 use crate::content::ScrapedWebPage;
+use crate::entities::EntityExtractionResult;
 use crate::llm::{LlmError, LLM};
 use crate::sitemap::SitemapParser;
 use serde::{Deserialize, Serialize};
@@ -42,6 +43,7 @@ pub struct CrawlResult {
     pub selected_urls: Vec<String>,
     pub scraped_content: Vec<ScrapedWebPage>,
     pub analysis: Vec<String>,
+    pub extracted_entities: Vec<EntityExtractionResult>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -141,6 +143,7 @@ impl SmartCrawler {
                         selected_urls: Vec::new(),
                         scraped_content: Vec::new(),
                         analysis: vec![format!("Failed to crawl: {}", e)],
+                        extracted_entities: Vec::new(),
                     };
                     results.push(failed_result);
                 }
@@ -296,6 +299,7 @@ impl SmartCrawler {
                 selected_urls: Vec::new(),
                 scraped_content: Vec::new(),
                 analysis: vec!["No relevant URLs selected by LLM".to_string()], // Changed Claude to LLM
+                extracted_entities: Vec::new(),
             });
         }
 
@@ -308,6 +312,7 @@ impl SmartCrawler {
 
         let mut scraped_content = Vec::new();
         let mut analysis = Vec::new();
+        let mut extracted_entities = Vec::new();
         let mut objective_met = false;
 
         // Step 4: Scrape and analyze each URL sequentially
@@ -335,25 +340,55 @@ impl SmartCrawler {
                 Ok(web_page) => {
                     tracing::info!("Analyzing content from: {}", web_page.url);
 
-                    // Ask LLM to analyze the content
+                    // Extract structured entities from the content
                     match self
-                        .llm_client // Changed from claude_client
-                        .analyze_content(
+                        .llm_client
+                        .extract_entities(
                             &self.config.objective,
                             &web_page.url,
                             &web_page.content.to_prompt(),
                         )
                         .await
                     {
-                        Ok(analysis_result) => {
+                        Ok(entity_result) => {
+                            let entity_count = entity_result.entity_count();
+                            let confidence = entity_result.extraction_confidence;
+                            
                             analysis.push(format!(
-                                "URL: {}\nAnalysis: {}",
-                                web_page.url, analysis_result
+                                "URL: {}\nExtracted {} entities with {:.1}% confidence\nAnalysis: {}",
+                                web_page.url, 
+                                entity_count,
+                                confidence * 100.0,
+                                entity_result.raw_analysis
                             ));
-                            objective_met = true;
+                            
+                            extracted_entities.push(entity_result);
+                            objective_met = entity_count > 0 && confidence > 0.5;
                         }
-                        Err(_) => {
-                            objective_met = false;
+                        Err(e) => {
+                            tracing::warn!("Entity extraction failed for {}: {}", web_page.url, e);
+                            
+                            // Fallback to simple content analysis
+                            match self
+                                .llm_client
+                                .analyze_content(
+                                    &self.config.objective,
+                                    &web_page.url,
+                                    &web_page.content.to_prompt(),
+                                )
+                                .await
+                            {
+                                Ok(analysis_result) => {
+                                    analysis.push(format!(
+                                        "URL: {}\nFallback Analysis: {}",
+                                        web_page.url, analysis_result
+                                    ));
+                                    objective_met = true;
+                                }
+                                Err(_) => {
+                                    objective_met = false;
+                                }
+                            }
                         }
                     }
 
@@ -374,6 +409,7 @@ impl SmartCrawler {
             selected_urls,
             scraped_content,
             analysis,
+            extracted_entities,
         })
     }
 

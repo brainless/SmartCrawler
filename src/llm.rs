@@ -1,4 +1,5 @@
 use crate::claude::ClaudeResponse; // Assuming ClaudeResponse might be generalized later
+use crate::entities::{ExtractedEntity, EntityExtractionResult};
 use async_trait::async_trait;
 use thiserror::Error; // Added for custom errors within default impls
 
@@ -159,6 +160,85 @@ Response format:
         }
 
         Ok(content_text)
+    }
+
+    /// Extracts structured entities from web content based on the objective.
+    async fn extract_entities(
+        &self,
+        objective: &str,
+        url: &str,
+        content: &str,
+    ) -> Result<EntityExtractionResult, LlmError> {
+        let prompt = format!(
+            r#"You are analyzing web content to extract structured entities based on a specific objective.
+
+URL: {}
+Objective: {}
+
+Content (truncated if necessary):
+{}
+
+INSTRUCTIONS:
+1. Analyze the content and extract structured data that relates to the objective
+2. Return the data as a JSON object with the following structure:
+{{
+  "entities": [
+    // Array of entity objects with a "type" field indicating the entity type
+  ],
+  "raw_analysis": "Brief description of what was found",
+  "extraction_confidence": 0.85 // Float between 0.0 and 1.0
+}}
+
+ENTITY TYPES AND STRUCTURES:
+- Person: {{"type": "Person", "first_name": "...", "last_name": "...", "title": "...", "company": "...", "email": "...", "phone": "..."}}
+- Location: {{"type": "Location", "name": "...", "address": "...", "city": "...", "state": "...", "country": "..."}}
+- Event: {{"type": "Event", "title": "...", "description": "...", "start_date": "YYYY-MM-DD", "location": {{...}}, "price": {{"amount": 0.0, "currency": "USD"}}}}
+- Product: {{"type": "Product", "name": "...", "description": "...", "price": {{"amount": 0.0, "currency": "USD"}}, "brand": "...", "category": "..."}}
+- Organization: {{"type": "Organization", "name": "...", "description": "...", "website": "...", "industry": "..."}}
+- NewsArticle: {{"type": "NewsArticle", "headline": "...", "summary": "...", "author": {{...}}, "publication_date": "..."}}
+- JobListing: {{"type": "JobListing", "title": "...", "company": {{...}}, "location": {{...}}, "employment_type": "FullTime"}}
+
+Return ONLY the JSON object, no additional text or explanation."#,
+            url,
+            objective,
+            content.chars().take(12000).collect::<String>()
+        );
+
+        let response = self.send_message(&prompt).await?;
+
+        let content_text = response
+            .content
+            .first()
+            .ok_or_else(|| Box::new(DefaultLlmImplError::NoContentInResponse) as LlmError)?
+            .text
+            .clone();
+
+        // Parse the JSON response
+        let extraction_data: serde_json::Value = serde_json::from_str(&content_text)
+            .map_err(|e| Box::new(DefaultLlmImplError::JsonParseFailed(e)) as LlmError)?;
+
+        let mut result = EntityExtractionResult::new(url.to_string(), objective.to_string());
+        
+        // Extract entities
+        if let Some(entities_array) = extraction_data["entities"].as_array() {
+            for entity_value in entities_array {
+                if let Ok(entity) = serde_json::from_value::<ExtractedEntity>(entity_value.clone()) {
+                    result.entities.push(entity);
+                }
+            }
+        }
+
+        // Extract raw analysis
+        if let Some(raw_analysis) = extraction_data["raw_analysis"].as_str() {
+            result.raw_analysis = raw_analysis.to_string();
+        }
+
+        // Extract confidence
+        if let Some(confidence) = extraction_data["extraction_confidence"].as_f64() {
+            result.extraction_confidence = confidence as f32;
+        }
+
+        Ok(result)
     }
 
     /// Sends a message to the LLM and gets a response.

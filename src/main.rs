@@ -123,9 +123,21 @@ async fn handle_crawl_mode(config: CrawlerConfig) {
                 println!("\nDomain: {}", result.domain);
                 println!("URLs Selected: {}", result.selected_urls.len());
                 println!("Pages Scraped: {}", result.scraped_content.len());
+                println!("Entities Extracted: {}", result.extracted_entities.iter().map(|e| e.entity_count()).sum::<usize>());
+                
                 println!("Analysis:");
                 for analysis_item in &result.analysis {
                     println!("- {}", analysis_item);
+                }
+                
+                if !result.extracted_entities.is_empty() {
+                    println!("\nExtracted Entities:");
+                    for entity_result in &result.extracted_entities {
+                        println!("  From {}: {} entities (confidence: {:.1}%)", 
+                                entity_result.url, 
+                                entity_result.entity_count(),
+                                entity_result.extraction_confidence * 100.0);
+                    }
                 }
 
                 println!("{:-^50}", "");
