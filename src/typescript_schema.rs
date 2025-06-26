@@ -1,5 +1,15 @@
-/// TypeScript type definitions that correspond to our Rust entity types.
+use crate::generate_ts::generate_typescript_schema;
+
+/// TypeScript type definitions generated from Rust entity types using ts-rs.
 /// These are used in LLM prompts to ensure accurate JSON structure generation.
+///
+/// Note: This schema is now generated from the Rust types using the ts-rs crate.
+pub fn get_typescript_schema() -> String {
+    generate_typescript_schema()
+}
+
+/// Legacy constant schema for backward compatibility
+/// This will be replaced by the generated schema
 pub const TYPESCRIPT_SCHEMA: &str = r#"
 // Supporting Types and Enums
 interface Price {

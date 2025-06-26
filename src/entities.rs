@@ -1,8 +1,18 @@
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use ts_rs::TS;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct LLMResponse {
+    pub is_objective_met: bool,
+    pub results: Option<Vec<ExtractedEntity>>,
+    pub analysis: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[ts(export)]
 pub struct Person {
     pub first_name: Option<String>,
     pub last_name: Option<String>,
@@ -57,7 +67,8 @@ impl Person {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[ts(export)]
 pub struct Location {
     pub name: Option<String>,
     pub address: Option<String>,
@@ -118,7 +129,8 @@ impl Location {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[ts(export)]
 pub struct Event {
     pub title: String,
     pub description: Option<String>,
@@ -136,7 +148,8 @@ pub struct Event {
     pub status: EventStatus,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[ts(export)]
 pub enum EventStatus {
     Upcoming,
     Ongoing,
@@ -173,7 +186,8 @@ impl Event {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[ts(export)]
 pub struct Price {
     pub amount: f64,
     pub currency: String,
@@ -197,7 +211,8 @@ impl Price {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[ts(export)]
 pub struct Product {
     pub name: String,
     pub description: Option<String>,
@@ -212,7 +227,8 @@ pub struct Product {
     pub rating: Option<f32>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[ts(export)]
 pub enum ProductAvailability {
     InStock,
     OutOfStock,
@@ -248,7 +264,8 @@ impl Product {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[ts(export)]
 pub struct Review {
     pub author: Option<Person>,
     pub rating: f32,
@@ -271,7 +288,8 @@ impl Review {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[ts(export)]
 pub struct Organization {
     pub name: String,
     pub description: Option<String>,
@@ -300,7 +318,8 @@ impl Organization {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[ts(export)]
 pub struct ContactInfo {
     pub email: Option<String>,
     pub phone: Option<String>,
@@ -325,7 +344,8 @@ impl ContactInfo {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[ts(export)]
 pub struct NewsArticle {
     pub headline: String,
     pub summary: Option<String>,
@@ -354,7 +374,8 @@ impl NewsArticle {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[ts(export)]
 pub struct JobListing {
     pub title: String,
     pub company: Option<Organization>,
@@ -369,7 +390,8 @@ pub struct JobListing {
     pub application_url: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[ts(export)]
 pub struct SalaryRange {
     pub min: Option<f64>,
     pub max: Option<f64>,
@@ -377,7 +399,8 @@ pub struct SalaryRange {
     pub period: SalaryPeriod,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[ts(export)]
 pub enum SalaryPeriod {
     Hourly,
     Daily,
@@ -386,7 +409,8 @@ pub enum SalaryPeriod {
     Yearly,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[ts(export)]
 pub enum EmploymentType {
     FullTime,
     PartTime,
@@ -414,7 +438,8 @@ impl JobListing {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[ts(export)]
 #[serde(tag = "type")]
 pub enum ExtractedEntity {
     Person(Person),
@@ -426,7 +451,8 @@ pub enum ExtractedEntity {
     JobListing(JobListing),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct EntityExtractionResult {
     pub url: String,
     pub objective: String,

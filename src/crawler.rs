@@ -378,12 +378,31 @@ impl SmartCrawler {
                                 )
                                 .await
                             {
-                                Ok(analysis_result) => {
-                                    analysis.push(format!(
-                                        "URL: {}\nFallback Analysis: {}",
-                                        web_page.url, analysis_result
-                                    ));
-                                    objective_met = true;
+                                Ok(llm_response) => {
+                                    if llm_response.is_objective_met {
+                                        let results_count = llm_response
+                                            .results
+                                            .as_ref()
+                                            .map(|r| r.len())
+                                            .unwrap_or(0);
+                                        analysis.push(format!(
+                                            "URL: {}\nObjective Met: {}\nFound {} results\nAnalysis: {}",
+                                            web_page.url, 
+                                            llm_response.is_objective_met,
+                                            results_count,
+                                            llm_response.analysis.unwrap_or_else(|| "No analysis provided".to_string())
+                                        ));
+                                        objective_met = true;
+                                    } else {
+                                        analysis.push(format!(
+                                            "URL: {}\nObjective Not Met\nAnalysis: {}",
+                                            web_page.url,
+                                            llm_response.analysis.unwrap_or_else(|| {
+                                                "No analysis provided".to_string()
+                                            })
+                                        ));
+                                        objective_met = false;
+                                    }
                                 }
                                 Err(_) => {
                                     objective_met = false;

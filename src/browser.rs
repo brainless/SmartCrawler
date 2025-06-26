@@ -36,6 +36,7 @@ impl Browser {
 
         // Wait for initial page load
         sleep(Duration::from_millis(1000)).await;
+        let _ = self.client.current_url().await?;
 
         // Perform human-like scrolling to load dynamic content
         self.scroll_page_gradually().await?;

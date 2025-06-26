@@ -1,6 +1,6 @@
 use crate::claude::ClaudeResponse; // Assuming ClaudeResponse might be generalized later
-use crate::entities::{EntityExtractionResult, ExtractedEntity};
-use crate::typescript_schema::TYPESCRIPT_SCHEMA;
+use crate::entities::{EntityExtractionResult, ExtractedEntity, LLMResponse};
+use crate::typescript_schema::get_typescript_schema;
 use async_trait::async_trait;
 use thiserror::Error; // Added for custom errors within default impls
 
@@ -119,7 +119,8 @@ Selected path numbers:"#,
         objective: &str,
         url: &str,
         content: &str,
-    ) -> Result<String, LlmError> {
+    ) -> Result<LLMResponse, LlmError> {
+        let typescript_schema = get_typescript_schema();
         let prompt = format!(
             r#"You are analyzing web content for a specific objective.
 
@@ -131,54 +132,93 @@ Content (truncated if necessary):
 
 INSTRUCTIONS:
 1. Carefully analyze the content to determine if it contains information relevant to the objective
-2. If the objective is NOT clearly met by the content, respond with exactly: "OBJECTIVE_NOT_MET"
-3. If the objective IS met, extract and present the relevant information using structured formats based on entity types
-4. When you find entities, use the TypeScript schema structure below as a guide for organizing the information
-5. Present the data in a human-readable format but follow the logical structure of the entities
+2. Respond ONLY with a valid JSON object that matches the LLMResponse structure
+3. If the objective is NOT clearly met, set is_objective_met to false and results to null
+4. If the objective IS met, set is_objective_met to true and include extracted entities in results array
+5. Each entity in results must conform to the TypeScript schema provided below
+6. Always include a brief analysis explaining your findings
 
-RESPONSE FORMAT:
-- If objective not met: "OBJECTIVE_NOT_MET"
-- If objective met: Structured summary using entity-based organization
+RESPONSE FORMAT (JSON ONLY):
+{{
+  "is_objective_met": boolean,
+  "results": ExtractedEntity[] | null,
+  "analysis": "Brief explanation of findings"
+}}
 
-ENTITY STRUCTURE REFERENCE:
+TYPESCRIPT SCHEMA:
 {}
 
-EXAMPLE STRUCTURED RESPONSES:
+EXAMPLE JSON RESPONSES:
 
-For "Find people/contact information":
-PERSON: John Smith
-- Title: CEO
-- Company: Tech Corp
-- Email: john.doe@techcorp.com
-- Phone: +1-555-0123
+For objective NOT met:
+{{
+  "is_objective_met": false,
+  "results": null,
+  "analysis": "No relevant information found for the given objective"
+}}
 
-For "Find events":
-EVENT: Tech Conference 2024
-- Description: Annual technology conference
-- Dates: March 15-17, 2024
-- Location: Convention Center, San Francisco, CA
-- Registration: https://techconf2024.com
-- Status: Upcoming
+For "Find people/contact information" (objective met):
+{{
+  "is_objective_met": true,
+  "results": [
+    {{
+      "type": "Person",
+      "first_name": "John",
+      "last_name": "Smith",
+      "title": "CEO",
+      "company": "Tech Corp",
+      "email": "john.smith@techcorp.com",
+      "phone": "+1-555-0123",
+      "full_name": null,
+      "bio": null,
+      "social_links": []
+    }}
+  ],
+  "analysis": "Found contact information for company executive"
+}}
 
-For "Find products":
-PRODUCT: Wireless Headphones
-- Brand: TechBrand
-- Price: $199.99 USD
-- Description: High-quality wireless headphones
-- Availability: In Stock
+For "Find events" (objective met):
+{{
+  "is_objective_met": true,
+  "results": [
+    {{
+      "type": "Event",
+      "title": "Tech Conference 2024",
+      "description": "Annual technology conference",
+      "start_date": "2024-03-15",
+      "end_date": "2024-03-17",
+      "start_time": null,
+      "end_time": null,
+      "location": {{
+        "type": "Location",
+        "name": "Convention Center",
+        "city": "San Francisco",
+        "state": "CA",
+        "country": "USA",
+        "address": null,
+        "postal_code": null,
+        "latitude": null,
+        "longitude": null,
+        "venue_type": "Convention Center"
+      }},
+      "organizer": null,
+      "attendees": [],
+      "category": "Technology",
+      "tags": [],
+      "price": null,
+      "registration_url": "https://techconf2024.com",
+      "status": "Upcoming"
+    }}
+  ],
+  "analysis": "Found upcoming technology conference with registration details"
+}}
 
-For "Find organizations/companies":
-ORGANIZATION: Tech Corp
-- Industry: Technology
-- Website: https://techcorp.com
-- Description: Leading technology company
-- Contact: info@techcorp.com
-
-Use this structured approach to present clear, organized information that directly addresses the objective."#,
+CRITICAL: Return ONLY the JSON object, no additional text, explanations, or markdown formatting.
+Start your response with {{ and end with }}. Do not wrap in code blocks."#,
             url,
             objective,
             content.chars().take(10000).collect::<String>(),
-            TYPESCRIPT_SCHEMA
+            typescript_schema
         );
 
         let response = self.send_message(&prompt).await?;
@@ -190,15 +230,26 @@ Use this structured approach to present clear, organized information that direct
             .text
             .clone();
 
-        // Check if the objective was not met and return an error
-        if content_text.contains("OBJECTIVE_NOT_MET") {
-            return Err(Box::new(DefaultLlmImplError::ObjectiveNotMet(format!(
-                "Objective '{}' not clearly met in content from {}",
-                objective, url
-            ))) as LlmError);
-        }
+        tracing::debug!("Raw LLM response for content analysis: {}", content_text);
 
-        Ok(content_text)
+        // Extract JSON from the response
+        let json_str = extract_json_from_response(&content_text).ok_or_else(|| {
+            tracing::warn!("No valid JSON found in LLM response for {}", url);
+            Box::new(DefaultLlmImplError::ObjectiveNotMet(
+                "No valid JSON object found in LLM response".to_string(),
+            )) as LlmError
+        })?;
+
+        tracing::debug!("Extracted JSON for parsing: {}", json_str);
+
+        // Parse the JSON response
+        let llm_response: LLMResponse = serde_json::from_str(&json_str).map_err(|e| {
+            tracing::error!("JSON parsing failed for {}: {}", url, e);
+            tracing::error!("Problematic JSON: {}", json_str);
+            Box::new(DefaultLlmImplError::JsonParseFailed(e)) as LlmError
+        })?;
+
+        Ok(llm_response)
     }
 
     /// Extracts structured entities from web content based on the objective.
@@ -249,7 +300,7 @@ Start your response with {{ and end with }}. Do not wrap in code blocks or add a
             url,
             objective,
             content.chars().take(12000).collect::<String>(),
-            TYPESCRIPT_SCHEMA
+            get_typescript_schema()
         );
 
         let response = self.send_message(&prompt).await?;
