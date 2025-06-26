@@ -380,3 +380,10 @@ GitHub issue #21 requests an enhancement to the `Browser::scrape_url` method to 
 - Unified schema-aware approach across both entity extraction and content analysis
 - Enhanced fallback analysis with entity-structured output formatting
 - Consistent data presentation following TypeScript entity organization
+
+### JSON Parsing Robustness Fix
+- Fixed "EOF while parsing a string" JSON parsing errors
+- Added robust JSON extraction from LLM responses that may contain extra text
+- Improved error handling with detailed logging for debugging
+- Enhanced prompt clarity to discourage markdown formatting in JSON responses
+- Added comprehensive tests for JSON extraction edge cases
