@@ -160,75 +160,120 @@ impl SmartCrawler {
     }
 
     async fn crawl_domain(&self, domain: &str) -> Result<CrawlResult, CrawlerError> {
-        tracing::info!("Discovering sitemap for: {}", domain);
+        tracing::info!("Starting crawl for domain: {}", domain);
+
+        let browser = Browser::new().await?;
+        let mut scraped_content = Vec::new();
+        let mut analysis = Vec::new();
+        let mut extracted_entities = Vec::new();
+        let mut objective_met = false;
+        let mut selected_urls = Vec::new();
+
+        let root_url = format!("https://{domain}");
 
         // Step 1: Get sitemap URLs
+        tracing::info!("Discovering sitemap for: {}", domain);
         let sitemap_urls = self.sitemap_parser.get_all_urls(domain).await?;
         tracing::info!(
             "Found {} URLs in sitemap for {}",
             sitemap_urls.len(),
             domain
         );
-        let browser = Browser::new().await?;
 
+        // Step 2: Always analyze homepage first
+        tracing::info!("Analyzing homepage as first URL: {}", root_url);
+        let mut homepage_analyzed = false;
+        let mut homepage_content: Option<ScrapedWebPage> = None;
+
+        match browser.scrape_url(&root_url).await {
+            Ok(web_page) => {
+                tracing::info!("Successfully scraped homepage: {}", web_page.url);
+
+                // Analyze homepage content
+                match self.analyze_page_content(&web_page).await {
+                    Ok((page_analysis, entities, met)) => {
+                        analysis.extend(page_analysis);
+                        extracted_entities.extend(entities);
+                        objective_met = met;
+                        homepage_analyzed = true;
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to analyze homepage content: {}", e);
+                        analysis.push(format!("Homepage analysis failed: {e}"));
+                    }
+                }
+
+                homepage_content = Some(web_page.clone());
+                scraped_content.push(web_page);
+                selected_urls.push(root_url.clone());
+
+                // Mark homepage as scraped to avoid duplicates
+                self.mark_url_as_scraped(domain, &root_url);
+            }
+            Err(e) => {
+                tracing::warn!("Failed to scrape homepage {}: {}", root_url, e);
+                analysis.push(format!("Homepage scraping failed: {e}"));
+            }
+        }
+
+        // Step 3: If sitemap is empty and homepage was analyzed, we're done
+        if sitemap_urls.is_empty() && homepage_analyzed {
+            tracing::info!(
+                "No sitemap found, homepage analysis complete for {}",
+                domain
+            );
+            browser.close().await?;
+            return Ok(CrawlResult {
+                domain: domain.to_string(),
+                objective: self.config.objective.clone(),
+                selected_urls,
+                scraped_content,
+                analysis,
+                extracted_entities,
+            });
+        }
+
+        // Step 4: Discover additional URLs for further analysis
         let mut urls_to_analyze: Vec<String> = sitemap_urls
             .iter()
             .map(|u| u.as_ref().to_string())
             .collect();
 
-        let urls_found_in_homepage: Vec<String> = {
+        // Get additional URLs from homepage if it was successfully scraped
+        if let Some(homepage) = &homepage_content {
+            let mut discovered_urls = homepage.links.clone();
+
+            // Filter to only include URLs from the same domain
+            discovered_urls.retain(|url| {
+                if let Ok(parsed_url) = url::Url::parse(url) {
+                    if let Some(url_domain) = parsed_url.host_str() {
+                        return url_domain == domain || url_domain.ends_with(&format!(".{domain}"));
+                    }
+                }
+                false
+            });
+
+            // Remove duplicates and exclude homepage itself
+            let unique_urls: std::collections::HashSet<String> =
+                discovered_urls.into_iter().collect();
+            let homepage_links: Vec<String> = unique_urls
+                .into_iter()
+                .filter(|url| url != &root_url) // Exclude homepage since we already analyzed it
+                .collect();
+
             tracing::info!(
-                "No URLs found in sitemap for {}, scraping root URL for links",
+                "Discovered {} additional URLs from homepage of {}",
+                homepage_links.len(),
                 domain
             );
-            let root_url = format!("https://{domain}");
-
-            // Scrape the root URL to extract all links
-            match browser.scrape_url(&root_url).await {
-                Ok(scraped_content) => {
-                    let mut discovered_urls = scraped_content.links;
-
-                    // Filter to only include URLs from the same domain
-                    discovered_urls.retain(|url| {
-                        if let Ok(parsed_url) = url::Url::parse(url) {
-                            if let Some(url_domain) = parsed_url.host_str() {
-                                return url_domain == domain
-                                    || url_domain.ends_with(&format!(".{domain}"));
-                            }
-                        }
-                        false
-                    });
-
-                    // Remove duplicates and include the root URL
-                    let mut unique_urls: std::collections::HashSet<String> =
-                        discovered_urls.into_iter().collect();
-                    unique_urls.insert(root_url.clone());
-                    let final_urls: Vec<String> = unique_urls.into_iter().collect();
-
-                    tracing::info!(
-                        "Discovered {} URLs from root page of {}",
-                        final_urls.len(),
-                        domain
-                    );
-                    final_urls
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        "Failed to scrape root URL {}: {}, using just root URL",
-                        root_url,
-                        e
-                    );
-                    vec![root_url]
-                }
-            }
-        };
-        urls_to_analyze.extend(urls_found_in_homepage);
+            urls_to_analyze.extend(homepage_links);
+        }
 
         // Only retain URLs that are one level deeper
         let urls_one_level_deeper =
             select_urls_one_level_deeper(urls_to_analyze.clone(), format!("https://{domain}"));
 
-        // Step 1.5: Add URLs that match objective keywords (improvement from issue #19)
+        // Step 5: Add URLs that match objective keywords (improvement from issue #19)
         let objective_matching_urls: Vec<String> = urls_to_analyze
             .iter()
             .filter(|url| {
@@ -254,8 +299,8 @@ impl SmartCrawler {
         // Add the remaining URLs from urls_one_level_deeper
         urls_to_analyze.extend(urls_one_level_deeper);
 
-        // Step 2: URL Selection (with optional keyword-based pre-filtering)
-        let mut selected_urls = if self.config.enable_keyword_filtering {
+        // Step 6: URL Selection for remaining URLs (with optional keyword-based pre-filtering)
+        let mut additional_selected_urls = if self.config.enable_keyword_filtering {
             // Two-stage selection: keyword ranking + LLM selection
             tracing::info!(
                 "Using two-stage URL selection (keywords + LLM) for: {}",
@@ -295,22 +340,26 @@ impl SmartCrawler {
         } else {
             // Traditional single-stage LLM selection
             tracing::info!("Using traditional LLM-only URL selection for: {}", domain);
-            self.llm_client
-                .select_urls(
-                    &self.config.objective,
-                    &urls_to_analyze,
-                    domain,
-                    self.config.max_urls_per_domain,
-                )
-                .await?
+            if urls_to_analyze.is_empty() {
+                Vec::new()
+            } else {
+                self.llm_client
+                    .select_urls(
+                        &self.config.objective,
+                        &urls_to_analyze,
+                        domain,
+                        self.config.max_urls_per_domain,
+                    )
+                    .await?
+            }
         };
 
-        // Step 2.5: Filter out already scraped URLs and track unique URLs (using path+query only)
+        // Step 7: Filter out already scraped URLs and track unique URLs (using path+query only)
         {
             let mut scraped_urls = self.urls_scraped.lock().unwrap();
             let domain_paths = scraped_urls.entry(domain.to_string()).or_default();
 
-            selected_urls.retain(|url: &String| {
+            additional_selected_urls.retain(|url: &String| {
                 if let Some(path_query) = extract_path_query(url) {
                     if domain_paths.contains(&path_query) {
                         tracing::debug!("Skipping already scraped path: {}", path_query);
@@ -326,37 +375,42 @@ impl SmartCrawler {
             });
         }
 
+        // Add additional URLs to our selected list
+        selected_urls.extend(additional_selected_urls.clone());
+
         tracing::info!(
-            "Selected {} unique URLs for {} (after deduplication)",
-            selected_urls.len(),
-            domain
+            "Selected {} additional URLs for {} (after deduplication, {} total including homepage)",
+            additional_selected_urls.len(),
+            domain,
+            selected_urls.len()
         );
 
-        if selected_urls.is_empty() {
+        // If no additional URLs were selected, we're done (only homepage was analyzed)
+        if additional_selected_urls.is_empty() {
+            tracing::info!(
+                "No additional URLs selected for {}, analysis complete",
+                domain
+            );
+            browser.close().await?;
             return Ok(CrawlResult {
                 domain: domain.to_string(),
                 objective: self.config.objective.clone(),
-                selected_urls: Vec::new(),
-                scraped_content: Vec::new(),
-                analysis: vec!["No relevant URLs selected by LLM".to_string()], // Changed Claude to LLM
-                extracted_entities: Vec::new(),
+                selected_urls,
+                scraped_content,
+                analysis,
+                extracted_entities,
             });
         }
 
-        // Step 3: Scrape the selected URLs one at a time
+        // Step 8: Scrape and analyze additional selected URLs
         tracing::info!(
-            "Scraping {} selected URLs for {}",
-            selected_urls.len(),
+            "Scraping {} additional selected URLs for {}",
+            additional_selected_urls.len(),
             domain
         );
 
-        let mut scraped_content = Vec::new();
-        let mut analysis = Vec::new();
-        let mut extracted_entities = Vec::new();
-        let mut objective_met = false;
-
-        // Step 4: Scrape and analyze each URL sequentially
-        for url in &selected_urls {
+        // Analyze additional URLs sequentially
+        for url in &additional_selected_urls {
             if objective_met {
                 // Ask user if they want to continue
                 println!("\nObjective has been met! Current analysis:");
@@ -380,74 +434,18 @@ impl SmartCrawler {
                 Ok(web_page) => {
                     tracing::info!("Analyzing content from: {}", web_page.url);
 
-                    // Extract structured entities from the content
-                    match self
-                        .llm_client
-                        .extract_entities(
-                            &self.config.objective,
-                            &web_page.url,
-                            &web_page.content.to_prompt(),
-                        )
-                        .await
-                    {
-                        Ok(entity_result) => {
-                            let entity_count = entity_result.entity_count();
-                            let confidence = entity_result.extraction_confidence;
-
-                            analysis.push(format!(
-                                "URL: {}\nExtracted {} entities with {:.1}% confidence\nAnalysis: {}",
-                                web_page.url,
-                                entity_count,
-                                confidence * 100.0,
-                                entity_result.raw_analysis
-                            ));
-
-                            extracted_entities.push(entity_result);
-                            objective_met = entity_count > 0 && confidence > 0.5;
+                    // Analyze this page's content
+                    match self.analyze_page_content(&web_page).await {
+                        Ok((page_analysis, entities, met)) => {
+                            analysis.extend(page_analysis);
+                            extracted_entities.extend(entities);
+                            if met {
+                                objective_met = true;
+                            }
                         }
                         Err(e) => {
-                            tracing::warn!("Entity extraction failed for {}: {}", web_page.url, e);
-
-                            // Fallback to simple content analysis
-                            match self
-                                .llm_client
-                                .analyze_content(
-                                    &self.config.objective,
-                                    &web_page.url,
-                                    &web_page.content.to_prompt(),
-                                )
-                                .await
-                            {
-                                Ok(llm_response) => {
-                                    if llm_response.is_objective_met {
-                                        let results_count = llm_response
-                                            .results
-                                            .as_ref()
-                                            .map(|r| r.len())
-                                            .unwrap_or(0);
-                                        analysis.push(format!(
-                                            "URL: {}\nObjective Met: {}\nFound {} results\nAnalysis: {}",
-                                            web_page.url,
-                                            llm_response.is_objective_met,
-                                            results_count,
-                                            llm_response.analysis.unwrap_or_else(|| "No analysis provided".to_string())
-                                        ));
-                                        objective_met = true;
-                                    } else {
-                                        analysis.push(format!(
-                                            "URL: {}\nObjective Not Met\nAnalysis: {}",
-                                            web_page.url,
-                                            llm_response.analysis.unwrap_or_else(|| {
-                                                "No analysis provided".to_string()
-                                            })
-                                        ));
-                                        objective_met = false;
-                                    }
-                                }
-                                Err(_) => {
-                                    objective_met = false;
-                                }
-                            }
+                            tracing::warn!("Failed to analyze content for {}: {}", web_page.url, e);
+                            analysis.push(format!("URL: {}\nAnalysis failed: {e}", web_page.url));
                         }
                     }
 
@@ -479,6 +477,94 @@ impl SmartCrawler {
             tracing::info!("Results saved to: {}", output_file);
         }
         Ok(())
+    }
+
+    /// Helper method to analyze a single page's content and return structured results
+    async fn analyze_page_content(
+        &self,
+        web_page: &ScrapedWebPage,
+    ) -> Result<(Vec<String>, Vec<EntityExtractionResult>, bool), CrawlerError> {
+        let mut page_analysis = Vec::new();
+        let mut page_entities = Vec::new();
+
+        // Extract structured entities from the content
+        let objective_met = match self
+            .llm_client
+            .extract_entities(
+                &self.config.objective,
+                &web_page.url,
+                &web_page.content.to_prompt(),
+            )
+            .await
+        {
+            Ok(entity_result) => {
+                let entity_count = entity_result.entity_count();
+                let confidence = entity_result.extraction_confidence;
+
+                page_analysis.push(format!(
+                    "URL: {}\nExtracted {} entities with {:.1}% confidence\nAnalysis: {}",
+                    web_page.url,
+                    entity_count,
+                    confidence * 100.0,
+                    entity_result.raw_analysis
+                ));
+
+                page_entities.push(entity_result);
+                entity_count > 0 && confidence > 0.5
+            }
+            Err(e) => {
+                tracing::warn!("Entity extraction failed for {}: {}", web_page.url, e);
+
+                // Fallback to simple content analysis
+                match self
+                    .llm_client
+                    .analyze_content(
+                        &self.config.objective,
+                        &web_page.url,
+                        &web_page.content.to_prompt(),
+                    )
+                    .await
+                {
+                    Ok(llm_response) => {
+                        if llm_response.is_objective_met {
+                            let results_count =
+                                llm_response.results.as_ref().map(|r| r.len()).unwrap_or(0);
+                            page_analysis.push(format!(
+                                "URL: {}\nObjective Met: {}\nFound {} results\nAnalysis: {}",
+                                web_page.url,
+                                llm_response.is_objective_met,
+                                results_count,
+                                llm_response
+                                    .analysis
+                                    .unwrap_or_else(|| "No analysis provided".to_string())
+                            ));
+                            true
+                        } else {
+                            page_analysis.push(format!(
+                                "URL: {}\nObjective Not Met\nAnalysis: {}",
+                                web_page.url,
+                                llm_response
+                                    .analysis
+                                    .unwrap_or_else(|| { "No analysis provided".to_string() })
+                            ));
+                            false
+                        }
+                    }
+                    Err(_) => false,
+                }
+            }
+        };
+
+        Ok((page_analysis, page_entities, objective_met))
+    }
+
+    /// Helper method to mark a URL as scraped in the tracking system
+    fn mark_url_as_scraped(&self, domain: &str, url: &str) {
+        if let Some(path_query) = extract_path_query(url) {
+            let mut scraped_urls = self.urls_scraped.lock().unwrap();
+            let domain_paths = scraped_urls.entry(domain.to_string()).or_default();
+            domain_paths.insert(path_query);
+        }
     }
 }
 
@@ -718,5 +804,71 @@ mod tests {
         let base_url = "https://example.com/level1";
         let expected = vec!["https://example.com/level1/level2"];
         assert_eq!(select_urls_one_level_deeper(urls, base_url), expected);
+    }
+
+    #[test]
+    fn test_extract_path_query_with_query() {
+        let url = "https://example.com/path/to/page?param=value&other=123";
+        let result = super::extract_path_query(url);
+        assert_eq!(
+            result,
+            Some("/path/to/page?param=value&other=123".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_path_query_without_query() {
+        let url = "https://example.com/path/to/page";
+        let result = super::extract_path_query(url);
+        assert_eq!(result, Some("/path/to/page".to_string()));
+    }
+
+    #[test]
+    fn test_extract_path_query_root_url() {
+        let url = "https://example.com/";
+        let result = super::extract_path_query(url);
+        assert_eq!(result, Some("/".to_string()));
+    }
+
+    #[test]
+    fn test_extract_path_query_invalid_url() {
+        let url = "not-a-valid-url";
+        let result = super::extract_path_query(url);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_matches_objective_keywords_match() {
+        let path_query = "/pricing/plans?category=business";
+        let objective = "Find pricing information for business plans";
+        assert!(super::matches_objective_keywords(path_query, objective));
+    }
+
+    #[test]
+    fn test_matches_objective_keywords_no_match() {
+        let path_query = "/about/team";
+        let objective = "Find pricing information";
+        assert!(!super::matches_objective_keywords(path_query, objective));
+    }
+
+    #[test]
+    fn test_matches_objective_keywords_partial_match() {
+        let path_query = "/products/pricing-details";
+        let objective = "Find pricing details";
+        assert!(super::matches_objective_keywords(path_query, objective));
+    }
+
+    #[test]
+    fn test_matches_objective_keywords_case_insensitive() {
+        let path_query = "/PRICING/PLANS";
+        let objective = "find pricing information";
+        assert!(super::matches_objective_keywords(path_query, objective));
+    }
+
+    #[test]
+    fn test_matches_objective_keywords_short_words_filtered() {
+        let path_query = "/contact/us";
+        let objective = "Find us on the web"; // "us" and "on" are short words that should be filtered
+        assert!(!super::matches_objective_keywords(path_query, objective));
     }
 }

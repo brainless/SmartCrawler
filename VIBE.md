@@ -500,3 +500,28 @@ Allow passing "http://example.com" or "https://example.com/" as the domain argum
 - Extract just the domain part from full URLs
 - Maintain backward compatibility with existing domain-only inputs
 - Add proper error handling for malformed URLs
+
+## GitHub Issue #34: Treat homepage as the first URL
+
+### User Request
+In our crawler::crawl_domain, we collect URLs from the homepage but we do not analyze the homepage content. Instead I would like to treat the homepage as the first URL in our analysis loop. When sitemap is empty, the homepage is the first and only URL to be analyzed. We do not need to rank or select URLs with LLM if there is only one URL. In the loop, we should find new URLs. These new URLs should go through our ranking and LLM based selection strategy. Thus, in the next iteration of the loop, we select the best candidate considering the page we just analyzed.
+
+### Task Plan
+1. ✅ Create new branch for GitHub issue #34
+2. ✅ Save user request and task plan to VIBE.md
+3. Analyze current crawl_domain logic and homepage handling
+4. Modify crawl_domain to treat homepage as first URL to analyze
+5. Update URL analysis loop to start with homepage when sitemap is empty
+6. Skip LLM selection when only one URL (homepage)
+7. Ensure new URLs from homepage go through ranking/LLM selection
+8. Add tests for the new homepage-first logic
+9. Run formatters, linters and tests
+10. Commit and push changes
+
+### Implementation Details
+- Homepage should be the first URL analyzed instead of just source for links
+- When sitemap is empty, start analysis loop with homepage URL
+- Skip LLM/ranking when only one URL (just homepage)
+- New URLs discovered from homepage should go through full ranking/LLM selection
+- Maintain iterative crawling where each analyzed page contributes URLs for next iteration
+- Ensure homepage content is properly analyzed and entities extracted
