@@ -2090,6 +2090,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_fetch_html_from_url_invalid_url() {
+        // Initialize crypto provider for browser operations in test
+        let _ = rustls::crypto::ring::default_provider().install_default();
+
         // Test with invalid URL that doesn't exist
         // Note: This test may fail if WebDriver server is not running
         // In production, this would be handled by the browser's error handling
