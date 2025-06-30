@@ -562,16 +562,49 @@ As a user I would like to use the --clean-html mode in the CLI to use our crawle
 
 ### Task Plan
 1. ✅ Save user request and task plan to VIBE.md
-2. Create new branch for the task (feature/clean-html-url-support)
-3. Analyze current --clean-html implementation
-4. Modify CLI args to detect URL vs local path for --clean-html
-5. Implement URL fetching in clean-html mode
-6. Add tests for URL detection and fetching
+2. ✅ Create new branch for the task (feature/clean-html-url-support)
+3. ✅ Analyze current --clean-html implementation
+4. ✅ Modify CLI args to detect URL vs local path for --clean-html
+5. ✅ Implement URL fetching in clean-html mode
+6. ✅ Add tests for URL detection and fetching
+7. ✅ Run formatters, linters and tests
+8. ✅ Commit and push to new branch
+
+### Implementation Details
+- Need to detect if first parameter is a URL (starts with http:// or https://) vs local file path
+- If URL detected, fetch the content using browser/WebDriver instead of simple HTTP client
+- Second parameter remains the output path for cleaned HTML
+- Maintain backward compatibility with existing local file functionality
+
+### Status: ✅ COMPLETED
+- Successfully implemented URL support using browser/WebDriver
+- Added crypto provider initialization for browser operations
+- All tests passing (97/97)
+- Feature works with both local files and URLs
+
+## GitHub Issue #39: Improve HTML cleaner
+
+### User Request
+I would like the HTML cleaner to remove images unless:
+- The image has a name that looks like a slug of readable text
+- The image has an alt text
+
+I would like the HTML cleaner to remove all HTML comments.
+
+### Task Plan
+1. Save user request and task plan to VIBE.md
+2. Create new branch for the task (feature/improve-html-cleaner)
+3. Analyze current HTML cleaner image handling
+4. Implement image filtering logic (slug name or alt text)
+5. Implement HTML comment removal
+6. Add tests for new image and comment filtering
 7. Run formatters, linters and tests
 8. Commit and push to new branch
 
 ### Implementation Details
-- Need to detect if first parameter is a URL (starts with http:// or https://) vs local file path
-- If URL detected, fetch the content using existing HTTP client
-- Second parameter remains the output path for cleaned HTML
-- Maintain backward compatibility with existing local file functionality
+- **Image Filtering**: Remove `<img>` tags unless they have:
+  - A `src` attribute with a filename that looks like a slug (readable text with hyphens/underscores)
+  - An `alt` attribute with meaningful text
+- **Comment Removal**: Remove all HTML comments `<!-- ... -->`
+- **Preserve Existing Functionality**: Keep all current HTML cleaning behavior
+- **Add Tests**: Test image filtering with various scenarios and comment removal
