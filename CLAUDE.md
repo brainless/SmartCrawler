@@ -6,6 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Create a new branch for each task. Branch names should start with chore/ or feature/ or fix/ etc.
 - When starting a new task please save the user's request and task plan to VIBE.md
 - When finished please commit and push to the new branch
+- Please add tests to check inputs and outputs that are user facing
 - Please mention GitHub issue if provided
 
 ## Core Commands
@@ -22,7 +23,7 @@ cargo run -- --objective "Find pricing information" --domains "example.com" --ma
 cargo run -- -o "Your objective" -d "domain1.com,domain2.com" -m 10 --delay 1000 -O results.json -v --candidate-multiplier 5
 ```
 
-### Development Commands  
+### Development Commands
 ```bash
 # Check compilation without building
 cargo check
