@@ -2,7 +2,7 @@ use dotenv::dotenv;
 use smart_crawler::{
     claude::ClaudeClient, // Import ClaudeClient for instantiation
     cli::{AppMode, CleanHtmlConfig, CrawlerConfig},
-    content::clean_html_file,
+    content::clean_html_source,
     crawler::SmartCrawler,
 };
 use std::sync::Arc; // Import Arc
@@ -36,6 +36,11 @@ async fn handle_clean_html_mode(config: CleanHtmlConfig) {
             .init();
     }
 
+    // Initialize rustls crypto provider (needed for browser operations)
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("Failed to install rustls crypto provider");
+
     // Validate configuration
     if let Err(e) = config.validate() {
         error!("Configuration error: {}", e);
@@ -43,14 +48,22 @@ async fn handle_clean_html_mode(config: CleanHtmlConfig) {
     }
 
     info!("Starting HTML cleaning");
-    info!("Input file: {}", config.input_file);
+    if config.is_url_source() {
+        info!("Input URL: {}", config.input_source);
+    } else {
+        info!("Input file: {}", config.input_source);
+    }
     info!("Output file: {}", config.output_file);
 
-    match clean_html_file(&config.input_file, &config.output_file) {
+    match clean_html_source(&config.input_source, &config.output_file).await {
         Ok(()) => {
             info!("HTML cleaning completed successfully!");
-            println!("✅ HTML file cleaned successfully!");
-            println!("📄 Input:  {}", config.input_file);
+            println!("✅ HTML cleaned successfully!");
+            if config.is_url_source() {
+                println!("🌐 Input URL: {}", config.input_source);
+            } else {
+                println!("📄 Input file: {}", config.input_source);
+            }
             println!("📄 Output: {}", config.output_file);
         }
         Err(e) => {
