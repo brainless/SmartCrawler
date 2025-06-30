@@ -523,6 +523,112 @@ fn extract_item_metadata(element: &scraper::ElementRef) -> HashMap<String, Strin
     metadata
 }
 
+/// Check if a filename looks like a slug (readable text with hyphens/underscores)
+/// Examples of slug-like names: "my-article-image.jpg", "product_photo.png", "hero-banner.webp"
+/// Examples of non-slug names: "img123.jpg", "photo.png", "image.gif", "banner1.jpg"
+fn is_slug_like_filename(filename: &str) -> bool {
+    // Remove file extension for analysis
+    let name_without_ext = filename.split('.').next().unwrap_or(filename);
+
+    // Must contain at least one hyphen or underscore (indicating word separation)
+    let has_separators = name_without_ext.contains('-') || name_without_ext.contains('_');
+
+    // Must be at least 5 characters long (to avoid very short names like "a-b.jpg")
+    let min_length = name_without_ext.len() >= 5;
+
+    // Should not be mostly numbers (avoid names like "12345-6.jpg")
+    let char_count = name_without_ext.chars().count();
+    let digit_count = name_without_ext
+        .chars()
+        .filter(|c| c.is_ascii_digit())
+        .count();
+    let mostly_letters = digit_count < (char_count / 2);
+
+    has_separators && min_length && mostly_letters
+}
+
+/// Check if alt text is meaningful (not just empty or whitespace)
+fn has_meaningful_alt_text(alt_text: &str) -> bool {
+    let trimmed = alt_text.trim();
+    // Must be at least 3 characters and contain at least one letter
+    trimmed.len() >= 3 && trimmed.chars().any(|c| c.is_alphabetic())
+}
+
+/// Filter images and SVGs: remove img and svg tags unless they have meaningful attributes
+///
+/// For IMG tags: Keep if they have slug-like filename or meaningful alt text
+/// For SVG tags: Keep if they have aria-label, title, or meaningful class/id attributes
+fn filter_images(html: &str) -> String {
+    let mut result = html.to_string();
+
+    // Handle IMG tags
+    let img_regex = Regex::new(r#"<img[^>]*>"#).expect("Valid img regex");
+    result = img_regex
+        .replace_all(&result, |caps: &regex::Captures| {
+            let img_tag = caps.get(0).unwrap().as_str();
+
+            // Extract src attribute
+            let src_regex = Regex::new(r#"src\s*=\s*["']([^"']*)["']"#).expect("Valid src regex");
+            let has_slug_filename = if let Some(src_match) = src_regex.captures(img_tag) {
+                let src_value = src_match.get(1).unwrap().as_str();
+                // Extract filename from path
+                let filename = src_value.split('/').next_back().unwrap_or(src_value);
+                is_slug_like_filename(filename)
+            } else {
+                false
+            };
+
+            // Extract alt attribute
+            let alt_regex = Regex::new(r#"alt\s*=\s*["']([^"']*)["']"#).expect("Valid alt regex");
+            let has_meaningful_alt = if let Some(alt_match) = alt_regex.captures(img_tag) {
+                let alt_value = alt_match.get(1).unwrap().as_str();
+                has_meaningful_alt_text(alt_value)
+            } else {
+                false
+            };
+
+            // Keep image if it has either slug-like filename OR meaningful alt text
+            if has_slug_filename || has_meaningful_alt {
+                img_tag.to_string()
+            } else {
+                String::new() // Remove the image
+            }
+        })
+        .to_string();
+
+    // Handle SVG tags (both self-closing and with content)
+    let svg_regex = Regex::new(r#"(?s)<svg[^>]*(?:/>|>.*?</svg>)"#).expect("Valid svg regex");
+    result = svg_regex
+        .replace_all(&result, |caps: &regex::Captures| {
+            let svg_tag = caps.get(0).unwrap().as_str();
+
+            // Check for meaningful attributes in SVG
+            let has_meaningful_content =
+                // Check for aria-label or title attributes
+                svg_tag.contains("aria-label=") ||
+                svg_tag.contains("title=") ||
+                // Check for meaningful class names that suggest content
+                (svg_tag.contains("class=") &&
+                 (svg_tag.contains("icon-") || svg_tag.contains("logo") ||
+                  svg_tag.contains("diagram") || svg_tag.contains("chart") ||
+                  svg_tag.contains("illustration"))) ||
+                // Check for meaningful id attributes
+                (svg_tag.contains("id=") &&
+                 (svg_tag.contains("logo") || svg_tag.contains("diagram") ||
+                  svg_tag.contains("chart") || svg_tag.contains("illustration")));
+
+            // Keep SVG if it has meaningful content indicators
+            if has_meaningful_content {
+                svg_tag.to_string()
+            } else {
+                String::new() // Remove the SVG
+            }
+        })
+        .to_string();
+
+    result
+}
+
 /// Cleans HTML by removing unnecessary tags, attributes, and content that are not useful
 /// for structured data extraction.
 ///
@@ -530,6 +636,7 @@ fn extract_item_metadata(element: &scraper::ElementRef) -> HashMap<String, Strin
 /// data extraction by:
 ///
 /// ## Elements Removed:
+/// - **HTML comments**: All `<!-- ... -->` comments
 /// - **Navigation elements**: `<nav>`, elements with navigation roles
 /// - **UI chrome**: `<header>`, `<footer>`, `<aside>`, sidebars
 /// - **Interactive elements**: `<script>`, `<style>`, `<noscript>`
@@ -538,6 +645,8 @@ fn extract_item_metadata(element: &scraper::ElementRef) -> HashMap<String, Strin
 /// - **Advertising**: Elements with ad-related classes
 /// - **Comments & social**: Comment sections, social media widgets
 /// - **Forms**: `<form>`, `<input>`, `<button>` (not useful for content extraction)
+/// - **Low-value images**: `<img>` tags without slug-like filenames or meaningful alt text
+/// - **Decorative SVGs**: `<svg>` tags without aria-label, title, or meaningful class/id attributes
 ///
 /// ## Attributes Cleaned:
 /// - Removes all `style` attributes (inline CSS)
@@ -553,7 +662,8 @@ fn extract_item_metadata(element: &scraper::ElementRef) -> HashMap<String, Strin
 /// - Lists (`<ul>`, `<ol>`, `<li>`, `<dl>`, `<dt>`, `<dd>`)
 /// - Tables (`<table>`, `<tr>`, `<td>`, `<th>`, `<thead>`, `<tbody>`)
 /// - Links (`<a>`) with `href` attributes
-/// - Images (`<img>`) with `src` and `alt` attributes
+/// - Images (`<img>`) with slug-like filenames or meaningful alt text
+/// - SVGs (`<svg>`) with aria-label, title, or meaningful class/id attributes
 ///
 /// ## Examples:
 /// ```html
@@ -598,6 +708,8 @@ pub fn clean_html(html: &str) -> String {
 
     // Remove unwanted elements using regex patterns
     let element_patterns = [
+        // HTML comments
+        r"(?s)<!--.*?-->",
         // Scripts and styles (including content)
         r"(?s)<script[^>]*>.*?</script>",
         r"(?s)<style[^>]*>.*?</style>",
@@ -648,6 +760,9 @@ pub fn clean_html(html: &str) -> String {
         }
     }
 
+    // Filter images: remove images unless they have slug-like filename or alt text
+    cleaned_html = filter_images(&cleaned_html);
+
     // Remove problematic attributes using regex patterns
     let attribute_patterns = [
         // Style attributes
@@ -692,11 +807,10 @@ pub fn clean_html(html: &str) -> String {
             .replace_all(&cleaned_html, |caps: &regex::Captures| {
                 let tag = &caps[1];
                 // Preserve certain self-closing tags even if empty
+                // Note: img tags are now filtered separately by filter_images function
                 match tag {
-                    "br" | "hr" | "img" | "input" | "meta" | "link" | "area" | "base" | "col"
-                    | "embed" | "source" | "track" | "wbr" => {
-                        caps.get(0).unwrap().as_str().to_string()
-                    }
+                    "br" | "hr" | "input" | "meta" | "link" | "area" | "base" | "col" | "embed"
+                    | "source" | "track" | "wbr" => caps.get(0).unwrap().as_str().to_string(),
                     _ => String::new(), // Remove other empty self-closing tags
                 }
             })
@@ -2110,4 +2224,439 @@ mod tests {
     // Note: We can't easily test successful URL fetching in unit tests without
     // setting up a mock server, so we'll rely on integration tests for that.
     // The URL detection logic is already tested in cli.rs
+
+    #[tokio::test]
+    async fn test_is_slug_like_filename() {
+        // Test slug-like filenames (should return true)
+        assert!(is_slug_like_filename("my-article-image.jpg"));
+        assert!(is_slug_like_filename("product_photo.png"));
+        assert!(is_slug_like_filename("hero-banner.webp"));
+        assert!(is_slug_like_filename("user-profile-pic.svg"));
+        assert!(is_slug_like_filename("company_logo.gif"));
+        assert!(is_slug_like_filename("feature-screenshot.jpeg"));
+
+        // Test non-slug filenames (should return false)
+        assert!(!is_slug_like_filename("img123.jpg"));
+        assert!(!is_slug_like_filename("photo.png"));
+        assert!(!is_slug_like_filename("image.gif"));
+        assert!(!is_slug_like_filename("banner1.jpg"));
+        assert!(!is_slug_like_filename("pic.svg"));
+        assert!(!is_slug_like_filename("logo.webp"));
+
+        // Test edge cases
+        assert!(!is_slug_like_filename("a-b.jpg")); // Too short
+        assert!(!is_slug_like_filename("12345-6.jpg")); // Mostly numbers
+        assert!(!is_slug_like_filename("image")); // No extension, no separators
+        assert!(!is_slug_like_filename("")); // Empty
+    }
+
+    #[tokio::test]
+    async fn test_has_meaningful_alt_text() {
+        // Test meaningful alt text (should return true)
+        assert!(has_meaningful_alt_text("A beautiful sunset"));
+        assert!(has_meaningful_alt_text("Company logo"));
+        assert!(has_meaningful_alt_text("User profile picture"));
+        assert!(has_meaningful_alt_text("Product photo showing features"));
+        assert!(has_meaningful_alt_text("123 Main Street building"));
+
+        // Test non-meaningful alt text (should return false)
+        assert!(!has_meaningful_alt_text(""));
+        assert!(!has_meaningful_alt_text("   "));
+        assert!(!has_meaningful_alt_text("ab")); // Too short
+        assert!(!has_meaningful_alt_text("123")); // Only numbers
+        assert!(!has_meaningful_alt_text("   a  ")); // Too short after trim
+    }
+
+    #[tokio::test]
+    async fn test_filter_images_keep_slug_like() {
+        let html = r#"
+            <div>
+                <p>Some content</p>
+                <img src="/images/hero-banner.jpg" width="800" height="400">
+                <img src="/photos/product_photo.png" alt="">
+                <img src="/assets/company-logo.svg" class="logo">
+                <p>More content</p>
+            </div>
+        "#;
+
+        let filtered = filter_images(html);
+
+        // Should keep images with slug-like filenames
+        assert!(filtered.contains("hero-banner.jpg"));
+        assert!(filtered.contains("product_photo.png"));
+        assert!(filtered.contains("company-logo.svg"));
+        assert!(filtered.contains("<img"));
+    }
+
+    #[tokio::test]
+    async fn test_filter_images_keep_meaningful_alt() {
+        let html = r#"
+            <div>
+                <p>Some content</p>
+                <img src="/img123.jpg" alt="Company headquarters building">
+                <img src="/photo.png" alt="User profile picture">
+                <img src="/banner1.gif" alt="Welcome message">
+                <p>More content</p>
+            </div>
+        "#;
+
+        let filtered = filter_images(html);
+
+        // Should keep images with meaningful alt text
+        assert!(filtered.contains("alt=\"Company headquarters building\""));
+        assert!(filtered.contains("alt=\"User profile picture\""));
+        assert!(filtered.contains("alt=\"Welcome message\""));
+        assert!(filtered.contains("<img"));
+    }
+
+    #[tokio::test]
+    async fn test_filter_images_remove_low_value() {
+        let html = r#"
+            <div>
+                <p>Some content</p>
+                <img src="/img123.jpg">
+                <img src="/photo.png" alt="">
+                <img src="/banner1.gif" alt="   ">
+                <img src="/image.webp" alt="ab">
+                <p>More content</p>
+            </div>
+        "#;
+
+        let filtered = filter_images(html);
+
+        // Should remove images without slug-like names or meaningful alt text
+        assert!(!filtered.contains("img123.jpg"));
+        assert!(!filtered.contains("photo.png"));
+        assert!(!filtered.contains("banner1.gif"));
+        assert!(!filtered.contains("image.webp"));
+        assert!(!filtered.contains("<img"));
+    }
+
+    #[tokio::test]
+    async fn test_filter_images_mixed_scenario() {
+        let html = r#"
+            <div>
+                <img src="/hero-banner.jpg" alt="">  <!-- Keep: slug-like name -->
+                <img src="/img123.jpg" alt="Product photo">  <!-- Keep: meaningful alt -->
+                <img src="/photo.png" alt="">  <!-- Remove: neither -->
+                <img src="/company_logo.svg" alt="Our logo">  <!-- Keep: both -->
+                <img src="/banner1.gif">  <!-- Remove: neither -->
+            </div>
+        "#;
+
+        let filtered = filter_images(html);
+
+        // Should keep first, second, and fourth images
+        assert!(filtered.contains("hero-banner.jpg"));
+        assert!(filtered.contains("alt=\"Product photo\""));
+        assert!(filtered.contains("company_logo.svg"));
+
+        // Should remove third and fifth images
+        assert!(!filtered.contains("photo.png"));
+        assert!(!filtered.contains("banner1.gif"));
+
+        // Should have exactly 3 img tags
+        let img_count = filtered.matches("<img").count();
+        assert_eq!(img_count, 3);
+    }
+
+    #[tokio::test]
+    async fn test_clean_html_removes_comments() {
+        let html = r#"
+            <html>
+                <!-- This is a comment -->
+                <head>
+                    <title>Test Page</title>
+                    <!-- TODO: Add more meta tags -->
+                </head>
+                <body>
+                    <!-- Begin main content -->
+                    <main>
+                        <h1>Title</h1>
+                        <!-- This content is great -->
+                        <p>Content here</p>
+                    </main>
+                    <!-- End main content -->
+                </body>
+                <!-- Footer comment -->
+            </html>
+        "#;
+
+        let cleaned = clean_html(html);
+
+        // Should remove all HTML comments
+        assert!(!cleaned.contains("<!-- This is a comment -->"));
+        assert!(!cleaned.contains("<!-- TODO: Add more meta tags -->"));
+        assert!(!cleaned.contains("<!-- Begin main content -->"));
+        assert!(!cleaned.contains("<!-- This content is great -->"));
+        assert!(!cleaned.contains("<!-- End main content -->"));
+        assert!(!cleaned.contains("<!-- Footer comment -->"));
+        assert!(!cleaned.contains("<!--"));
+        assert!(!cleaned.contains("-->"));
+
+        // Should preserve actual content
+        assert!(cleaned.contains("<h1>Title</h1>"));
+        assert!(cleaned.contains("<p>Content here</p>"));
+        assert!(cleaned.contains("<main>"));
+    }
+
+    #[tokio::test]
+    async fn test_clean_html_filters_images() {
+        let html = r#"
+            <html>
+                <body>
+                    <article>
+                        <h1>Article Title</h1>
+                        <img src="/hero-image.jpg" alt="">  <!-- Keep: slug-like -->
+                        <p>Article content</p>
+                        <img src="/img123.jpg" alt="Important diagram">  <!-- Keep: meaningful alt -->
+                        <img src="/photo.png" alt="">  <!-- Remove: neither -->
+                        <img src="/company_logo.svg" alt="Logo">  <!-- Keep: both -->
+                        <img src="/banner1.gif">  <!-- Remove: neither -->
+                    </article>
+                </body>
+            </html>
+        "#;
+
+        let cleaned = clean_html(html);
+
+        // Should keep meaningful images
+        assert!(cleaned.contains("hero-image.jpg"));
+        assert!(cleaned.contains("alt=\"Important diagram\""));
+        assert!(cleaned.contains("company_logo.svg"));
+
+        // Should remove low-value images
+        assert!(!cleaned.contains("photo.png"));
+        assert!(!cleaned.contains("banner1.gif"));
+
+        // Should preserve other content
+        assert!(cleaned.contains("<h1>Article Title</h1>"));
+        assert!(cleaned.contains("<p>Article content</p>"));
+        assert!(cleaned.contains("<article>"));
+    }
+
+    #[tokio::test]
+    async fn test_clean_html_combined_improvements() {
+        let html = r#"
+            <html>
+                <!-- Page comment -->
+                <head>
+                    <title>Test Page</title>
+                    <script>alert('test');</script>
+                    <!-- Meta comment -->
+                </head>
+                <body>
+                    <!-- Content starts here -->
+                    <main>
+                        <h1>Article</h1>
+                        <img src="/hero-banner.jpg" alt="">  <!-- Keep -->
+                        <p>Content with meaning</p>
+                        <img src="/ad123.jpg">  <!-- Remove -->
+                        <!-- More content below -->
+                        <img src="/diagram.png" alt="Important chart">  <!-- Keep -->
+                    </main>
+                    <!-- Content ends here -->
+                </body>
+            </html>
+        "#;
+
+        let cleaned = clean_html(html);
+
+        // Should remove all comments
+        assert!(!cleaned.contains("<!--"));
+        assert!(!cleaned.contains("-->"));
+
+        // Should remove scripts
+        assert!(!cleaned.contains("<script"));
+
+        // Should filter images appropriately
+        assert!(cleaned.contains("hero-banner.jpg")); // Slug-like name
+        assert!(cleaned.contains("alt=\"Important chart\"")); // Meaningful alt
+        assert!(!cleaned.contains("ad123.jpg")); // Neither condition met
+
+        // Should preserve content
+        assert!(cleaned.contains("<h1>Article</h1>"));
+        assert!(cleaned.contains("<p>Content with meaning</p>"));
+        assert!(cleaned.contains("<main>"));
+    }
+
+    #[tokio::test]
+    async fn test_filter_images_svg_keep_with_aria_label() {
+        let html = r#"
+            <html>
+                <body>
+                    <svg aria-label="Company logo" width="100" height="50">
+                        <circle cx="50" cy="25" r="20" fill="blue"/>
+                    </svg>
+                </body>
+            </html>
+        "#;
+
+        let cleaned = filter_images(html);
+
+        // Should keep SVG with aria-label
+        assert!(cleaned.contains("<svg aria-label=\"Company logo\""));
+        assert!(cleaned.contains("</svg>"));
+    }
+
+    #[tokio::test]
+    async fn test_filter_images_svg_keep_with_title() {
+        let html = r#"
+            <html>
+                <body>
+                    <svg title="Data visualization" width="200" height="100">
+                        <rect width="200" height="100" fill="green"/>
+                    </svg>
+                </body>
+            </html>
+        "#;
+
+        let cleaned = filter_images(html);
+
+        // Should keep SVG with title attribute
+        assert!(cleaned.contains("<svg title=\"Data visualization\""));
+        assert!(cleaned.contains("</svg>"));
+    }
+
+    #[tokio::test]
+    async fn test_filter_images_svg_keep_with_meaningful_class() {
+        let html = r#"
+            <html>
+                <body>
+                    <svg class="icon-chart" width="50" height="50">
+                        <path d="M10,10 L40,40"/>
+                    </svg>
+                    <svg class="company-logo" width="100" height="50">
+                        <text x="10" y="30">Logo</text>
+                    </svg>
+                </body>
+            </html>
+        "#;
+
+        let cleaned = filter_images(html);
+
+        // Should keep SVGs with meaningful class names
+        assert!(cleaned.contains("class=\"icon-chart\""));
+        assert!(cleaned.contains("class=\"company-logo\""));
+    }
+
+    #[tokio::test]
+    async fn test_filter_images_svg_keep_with_meaningful_id() {
+        let html = r#"
+            <html>
+                <body>
+                    <svg id="diagram-flow" width="300" height="200">
+                        <circle cx="150" cy="100" r="50"/>
+                    </svg>
+                </body>
+            </html>
+        "#;
+
+        let cleaned = filter_images(html);
+
+        // Should keep SVG with meaningful id
+        assert!(cleaned.contains("id=\"diagram-flow\""));
+        assert!(cleaned.contains("</svg>"));
+    }
+
+    #[tokio::test]
+    async fn test_filter_images_svg_remove_decorative() {
+        let html = r#"
+            <html>
+                <body>
+                    <svg width="20" height="20">
+                        <circle cx="10" cy="10" r="5" fill="red"/>
+                    </svg>
+                    <svg class="btn-icon" width="16" height="16">
+                        <path d="M8,8 L12,12"/>
+                    </svg>
+                </body>
+            </html>
+        "#;
+
+        let cleaned = filter_images(html);
+
+        // Should remove decorative SVGs without meaningful attributes
+        assert!(!cleaned.contains("<svg width=\"20\""));
+        assert!(!cleaned.contains("class=\"btn-icon\""));
+        assert!(!cleaned.contains("</svg>"));
+    }
+
+    #[tokio::test]
+    async fn test_filter_images_svg_self_closing() {
+        let html = r#"
+            <html>
+                <body>
+                    <svg aria-label="Icon" width="24" height="24"/>
+                    <svg class="generic" width="16" height="16"/>
+                </body>
+            </html>
+        "#;
+
+        let cleaned = filter_images(html);
+
+        // Should keep meaningful self-closing SVG
+        assert!(cleaned.contains("aria-label=\"Icon\""));
+
+        // Should remove decorative self-closing SVG
+        assert!(!cleaned.contains("class=\"generic\""));
+    }
+
+    #[tokio::test]
+    async fn test_filter_images_mixed_img_and_svg() {
+        let html = r#"
+            <html>
+                <body>
+                    <main>
+                        <h1>Article</h1>
+                        <!-- Keep: Image with slug name -->
+                        <img src="/hero-banner.jpg" width="800" height="400">
+                        
+                        <!-- Keep: SVG with aria-label -->
+                        <svg aria-label="Chart showing growth" width="400" height="200">
+                            <rect width="100" height="150" fill="blue"/>
+                        </svg>
+                        
+                        <!-- Remove: Image without meaningful attributes -->
+                        <img src="/photo123.png" alt="">
+                        
+                        <!-- Remove: Decorative SVG -->
+                        <svg width="10" height="10">
+                            <circle cx="5" cy="5" r="3"/>
+                        </svg>
+                        
+                        <!-- Keep: Image with meaningful alt -->
+                        <img src="/tmp456.jpg" alt="Product demonstration">
+                        
+                        <!-- Keep: SVG with meaningful class -->
+                        <svg class="logo-main" width="150" height="75">
+                            <text x="10" y="40">Company</text>
+                        </svg>
+                        
+                        <p>Article content</p>
+                    </main>
+                </body>
+            </html>
+        "#;
+
+        let cleaned = filter_images(html);
+
+        // Should keep meaningful images
+        assert!(cleaned.contains("hero-banner.jpg"));
+        assert!(cleaned.contains("alt=\"Product demonstration\""));
+
+        // Should keep meaningful SVGs
+        assert!(cleaned.contains("aria-label=\"Chart showing growth\""));
+        assert!(cleaned.contains("class=\"logo-main\""));
+
+        // Should remove low-value images
+        assert!(!cleaned.contains("photo123.png"));
+
+        // Should remove decorative SVGs
+        assert!(!cleaned.contains("width=\"10\" height=\"10\""));
+
+        // Should preserve content structure
+        assert!(cleaned.contains("<h1>Article</h1>"));
+        assert!(cleaned.contains("<p>Article content</p>"));
+    }
 }
