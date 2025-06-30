@@ -33,11 +33,11 @@ pub enum AppMode {
 /// Removes trailing slashes and returns just the domain part
 /// Examples:
 /// - "https://example.com/" -> "example.com"
-/// - "http://example.com" -> "example.com"  
+/// - "http://example.com" -> "example.com"
 /// - "example.com" -> "example.com"
 fn extract_domain_from_url(input: &str) -> Result<String, String> {
     let trimmed = input.trim();
-    
+
     // If it doesn't contain ://, assume it's already a domain
     if !trimmed.contains("://") {
         let domain = trimmed.trim_end_matches('/').to_string();
@@ -46,7 +46,7 @@ fn extract_domain_from_url(input: &str) -> Result<String, String> {
         }
         return Ok(domain);
     }
-    
+
     // Parse as URL
     match Url::parse(trimmed) {
         Ok(url) => {
@@ -166,7 +166,7 @@ impl CrawlerConfig {
             .split(',')
             .map(extract_domain_from_url)
             .collect();
-        
+
         let domains = match domains {
             Ok(domains) => domains,
             Err(e) => {
@@ -279,7 +279,7 @@ mod tests {
             "www.example.com"
         );
 
-        // Test full URLs with http  
+        // Test full URLs with http
         assert_eq!(
             extract_domain_from_url("http://example.com").unwrap(),
             "example.com"

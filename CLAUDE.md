@@ -5,8 +5,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Development Workflow
 - Create a new branch for each task. Branch names should start with chore/ or feature/ or fix/ etc.
 - When starting a new task please save the user's request and task plan to VIBE.md
-- When finished please commit and push to the new branch
 - Please add tests to check inputs and outputs that are user facing
+- Please run linters and tests before committing the changes
+- When finished please commit and push to the new branch
 - Please mention GitHub issue if provided
 
 ## Core Commands
