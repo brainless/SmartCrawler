@@ -522,8 +522,7 @@ fn select_urls_one_level_deeper<T: AsRef<str>>(urls: Vec<T>, base_url: T) -> Vec
         if let Ok(parsed_url) = url::Url::parse(url_str) {
             // Check if URL is from the same domain
             if let Some(url_domain) = parsed_url.host_str() {
-                if url_domain != base_domain && !url_domain.ends_with(&format!(".{base_domain}"))
-                {
+                if url_domain != base_domain && !url_domain.ends_with(&format!(".{base_domain}")) {
                     continue;
                 }
 
