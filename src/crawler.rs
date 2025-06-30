@@ -110,48 +110,76 @@ impl SmartCrawler {
 
     pub async fn crawl_all_domains(&self) -> Result<CrawlerResults, CrawlerError> {
         let mut results = Vec::new();
-        let mut processed_domains = std::collections::HashSet::new();
 
-        loop {
-            // Get next unprocessed domain
-            let next_domain = {
-                let domains = self.config.domains.lock().unwrap();
-                domains
-                    .iter()
-                    .find(|domain| !processed_domains.contains(*domain))
-                    .cloned()
-            };
+        // Check if we're in links-only mode
+        if self.config.is_links_only_mode() {
+            tracing::info!("Running in links-only mode");
+            let result = self.crawl_links_only().await?;
+            results.push(result);
+        } else {
+            // Traditional domain-based crawling
+            let mut processed_domains = std::collections::HashSet::new();
 
-            let domain = match next_domain {
-                Some(d) => d,
-                None => break, // No more domains to process
-            };
+            loop {
+                // Get next unprocessed domain
+                let next_domain = {
+                    let domains = self.config.domains.lock().unwrap();
+                    domains
+                        .iter()
+                        .find(|domain| !processed_domains.contains(*domain))
+                        .cloned()
+                };
 
-            processed_domains.insert(domain.clone());
-            tracing::info!("Starting crawl for domain: {}", domain);
+                let domain = match next_domain {
+                    Some(d) => d,
+                    None => break, // No more domains to process
+                };
 
-            match self.crawl_domain(&domain).await {
-                Ok(result) => {
-                    tracing::info!("Successfully crawled domain: {}", domain);
-                    results.push(result);
-                }
-                Err(e) => {
-                    tracing::error!("Failed to crawl domain {}: {}", domain, e);
-                    // Continue with other domains even if one fails
-                    let failed_result = CrawlResult {
-                        domain: domain.clone(),
-                        objective: self.config.objective.clone(),
-                        selected_urls: Vec::new(),
-                        scraped_content: Vec::new(),
-                        analysis: vec![format!("Failed to crawl: {}", e)],
-                        extracted_entities: Vec::new(),
-                    };
-                    results.push(failed_result);
+                processed_domains.insert(domain.clone());
+                tracing::info!("Starting crawl for domain: {}", domain);
+
+                match self.crawl_domain(&domain).await {
+                    Ok(result) => {
+                        tracing::info!("Successfully crawled domain: {}", domain);
+                        results.push(result);
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to crawl domain {}: {}", domain, e);
+                        // Continue with other domains even if one fails
+                        let failed_result = CrawlResult {
+                            domain: domain.clone(),
+                            objective: self.config.objective.clone(),
+                            selected_urls: Vec::new(),
+                            scraped_content: Vec::new(),
+                            analysis: vec![format!("Failed to crawl: {}", e)],
+                            extracted_entities: Vec::new(),
+                        };
+                        results.push(failed_result);
+                    }
                 }
             }
         }
 
-        let final_domains = self.config.domains.lock().unwrap().clone();
+        let final_domains = if self.config.is_links_only_mode() {
+            // For links-only mode, extract domains from the provided links
+            self.config
+                .get_links()
+                .unwrap_or_default()
+                .iter()
+                .filter_map(|url| {
+                    if let Ok(parsed) = url::Url::parse(url) {
+                        parsed.host_str().map(|h| h.to_string())
+                    } else {
+                        None
+                    }
+                })
+                .collect::<std::collections::HashSet<_>>()
+                .into_iter()
+                .collect()
+        } else {
+            self.config.domains.lock().unwrap().clone()
+        };
+
         Ok(CrawlerResults {
             objective: self.config.objective.clone(),
             domains: final_domains,
@@ -180,46 +208,73 @@ impl SmartCrawler {
             domain
         );
 
-        // Step 2: Always analyze homepage first
-        tracing::info!("Analyzing homepage as first URL: {}", root_url);
-        let mut homepage_analyzed = false;
-        let mut homepage_content: Option<ScrapedWebPage> = None;
-
-        match browser.scrape_url(&root_url).await {
-            Ok(web_page) => {
-                tracing::info!("Successfully scraped homepage: {}", web_page.url);
-
-                // Analyze homepage content
-                match self.analyze_page_content(&web_page).await {
-                    Ok((page_analysis, entities, met)) => {
-                        analysis.extend(page_analysis);
-                        extracted_entities.extend(entities);
-                        objective_met = met;
-                        homepage_analyzed = true;
+        // Step 2: Determine starting URLs based on configuration
+        let starting_urls = if self.config.is_links_with_domains_mode() {
+            // Mode 2: Start with provided links for this domain
+            let links = self.config.get_links().unwrap_or_default();
+            let domain_links: Vec<String> = links
+                .into_iter()
+                .filter(|url| {
+                    if let Ok(parsed) = url::Url::parse(url) {
+                        if let Some(url_domain) = parsed.host_str() {
+                            return url_domain == domain
+                                || url_domain.ends_with(&format!(".{domain}"));
+                        }
                     }
-                    Err(e) => {
-                        tracing::warn!("Failed to analyze homepage content: {}", e);
-                        analysis.push(format!("Homepage analysis failed: {e}"));
-                    }
-                }
+                    false
+                })
+                .collect();
 
-                homepage_content = Some(web_page.clone());
-                scraped_content.push(web_page);
-                selected_urls.push(root_url.clone());
-
-                // Mark homepage as scraped to avoid duplicates
-                self.mark_url_as_scraped(domain, &root_url);
+            if domain_links.is_empty() {
+                vec![root_url.clone()]
+            } else {
+                domain_links
             }
-            Err(e) => {
-                tracing::warn!("Failed to scrape homepage {}: {}", root_url, e);
-                analysis.push(format!("Homepage scraping failed: {e}"));
+        } else {
+            // Traditional mode: Start with homepage
+            vec![root_url.clone()]
+        };
+
+        tracing::info!("Starting URLs for {}: {:?}", domain, starting_urls);
+
+        // Analyze starting URLs
+        for start_url in &starting_urls {
+            match browser.scrape_url(start_url).await {
+                Ok(web_page) => {
+                    tracing::info!("Successfully scraped starting URL: {}", web_page.url);
+
+                    // Analyze this page's content
+                    match self.analyze_page_content(&web_page).await {
+                        Ok((page_analysis, entities, met)) => {
+                            analysis.extend(page_analysis);
+                            extracted_entities.extend(entities);
+                            if met {
+                                objective_met = true;
+                            }
+                        }
+                        Err(e) => {
+                            tracing::warn!("Failed to analyze content for {}: {}", web_page.url, e);
+                            analysis.push(format!("URL: {}\nAnalysis failed: {e}", web_page.url));
+                        }
+                    }
+
+                    scraped_content.push(web_page);
+                    selected_urls.push(start_url.clone());
+
+                    // Mark URL as scraped to avoid duplicates
+                    self.mark_url_as_scraped(domain, start_url);
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to scrape starting URL {}: {}", start_url, e);
+                    analysis.push(format!("URL: {start_url}\nScraping failed: {e}"));
+                }
             }
         }
 
-        // Step 3: If sitemap is empty and homepage was analyzed, we're done
-        if sitemap_urls.is_empty() && homepage_analyzed {
+        // Step 3: If sitemap is empty and we have analyzed starting URLs, check if we're done
+        if sitemap_urls.is_empty() && !scraped_content.is_empty() {
             tracing::info!(
-                "No sitemap found, homepage analysis complete for {}",
+                "No sitemap found, starting URL analysis complete for {}",
                 domain
             );
             browser.close().await?;
@@ -239,9 +294,9 @@ impl SmartCrawler {
             .map(|u| u.as_ref().to_string())
             .collect();
 
-        // Get additional URLs from homepage if it was successfully scraped
-        if let Some(homepage) = &homepage_content {
-            let mut discovered_urls = homepage.links.clone();
+        // Get additional URLs from scraped starting pages
+        for scraped_page in &scraped_content {
+            let mut discovered_urls = scraped_page.links.clone();
 
             // Filter to only include URLs from the same domain
             discovered_urls.retain(|url| {
@@ -253,20 +308,21 @@ impl SmartCrawler {
                 false
             });
 
-            // Remove duplicates and exclude homepage itself
+            // Remove duplicates and exclude already analyzed URLs
             let unique_urls: std::collections::HashSet<String> =
                 discovered_urls.into_iter().collect();
-            let homepage_links: Vec<String> = unique_urls
+            let new_links: Vec<String> = unique_urls
                 .into_iter()
-                .filter(|url| url != &root_url) // Exclude homepage since we already analyzed it
+                .filter(|url| !selected_urls.contains(url)) // Exclude already analyzed URLs
                 .collect();
 
             tracing::info!(
-                "Discovered {} additional URLs from homepage of {}",
-                homepage_links.len(),
+                "Discovered {} additional URLs from {} on {}",
+                new_links.len(),
+                scraped_page.url,
                 domain
             );
-            urls_to_analyze.extend(homepage_links);
+            urls_to_analyze.extend(new_links);
         }
 
         // Only retain URLs that are one level deeper
@@ -385,7 +441,7 @@ impl SmartCrawler {
             selected_urls.len()
         );
 
-        // If no additional URLs were selected, we're done (only homepage was analyzed)
+        // If no additional URLs were selected, we're done (only starting URLs were analyzed)
         if additional_selected_urls.is_empty() {
             tracing::info!(
                 "No additional URLs selected for {}, analysis complete",
@@ -565,6 +621,84 @@ impl SmartCrawler {
             let domain_paths = scraped_urls.entry(domain.to_string()).or_default();
             domain_paths.insert(path_query);
         }
+    }
+
+    /// Crawl only the provided links without domain discovery or sitemap extraction
+    async fn crawl_links_only(&self) -> Result<CrawlResult, CrawlerError> {
+        tracing::info!("Starting links-only crawl");
+
+        let links = self.config.get_links().ok_or_else(|| {
+            CrawlerError::LlmError("No links provided for links-only mode".to_string())
+        })?;
+
+        let browser = Browser::new().await?;
+        let mut scraped_content = Vec::new();
+        let mut analysis = Vec::new();
+        let mut extracted_entities = Vec::new();
+        let mut objective_met = false;
+
+        tracing::info!("Analyzing {} provided URLs", links.len());
+
+        // Analyze each provided URL
+        for url in &links {
+            if objective_met {
+                // Ask user if they want to continue
+                println!("\nObjective has been met! Current analysis:");
+                for entry in &analysis {
+                    println!("{entry}");
+                }
+
+                print!("\nContinue analyzing remaining URLs? (y/N): ");
+                std::io::stdout().flush().unwrap();
+
+                let mut input = String::new();
+                std::io::stdin().read_line(&mut input).unwrap();
+                let continue_crawling = input.trim().to_lowercase() == "y";
+
+                if !continue_crawling {
+                    break;
+                }
+            }
+
+            tracing::info!("Scraping URL: {}", url);
+            match browser.scrape_url(url).await {
+                Ok(web_page) => {
+                    tracing::info!("Successfully scraped: {}", web_page.url);
+
+                    // Analyze this page's content
+                    match self.analyze_page_content(&web_page).await {
+                        Ok((page_analysis, entities, met)) => {
+                            analysis.extend(page_analysis);
+                            extracted_entities.extend(entities);
+                            if met {
+                                objective_met = true;
+                            }
+                        }
+                        Err(e) => {
+                            tracing::warn!("Failed to analyze content for {}: {}", web_page.url, e);
+                            analysis.push(format!("URL: {}\nAnalysis failed: {e}", web_page.url));
+                        }
+                    }
+
+                    scraped_content.push(web_page);
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to scrape URL {}: {}", url, e);
+                    analysis.push(format!("URL: {url}\nScraping failed: {e}"));
+                }
+            }
+        }
+
+        browser.close().await?;
+
+        Ok(CrawlResult {
+            domain: "links-only".to_string(),
+            objective: self.config.objective.clone(),
+            selected_urls: links,
+            scraped_content,
+            analysis,
+            extracted_entities,
+        })
     }
 }
 

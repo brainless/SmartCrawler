@@ -525,3 +525,32 @@ In our crawler::crawl_domain, we collect URLs from the homepage but we do not an
 - New URLs discovered from homepage should go through full ranking/LLM selection
 - Maintain iterative crawling where each analyzed page contributes URLs for next iteration
 - Ensure homepage content is properly analyzed and entities extracted
+
+## GitHub Issue #32: Allow passing links to extract data
+
+### User Request
+I would like to pass links to pages with a `--links` argument. There are two modes that it can affect the crawler:
+
+1. Without --domains argument: In this mode, the crawler should not fetch sitemap or URLs of other pages. Instead it should only try and extract data from the given URLs in the --links argument
+2. With --domains argument: In this mode the crawling starts from the URLs given in --links argument instead of the homepage. Sitemap extraction should happen but URLs found in the pages provided in the --links argument should be added to the total list of links to analyze.
+
+### Task Plan
+1. ✅ Create new branch for GitHub issue #32
+2. ✅ Save user request and task plan to VIBE.md
+3. Analyze current CLI structure and add --links argument
+4. Implement mode 1: --links without --domains (extract only from given URLs)
+5. Implement mode 2: --links with --domains (start crawling from given URLs)
+6. Update crawl_domain logic to handle starting URLs
+7. Add tests for both modes of --links functionality
+8. Add input validation for URL formats in --links
+9. Run formatters, linters and tests
+10. Commit and push changes
+
+### Implementation Details
+- Add new `--links` CLI argument that accepts comma-separated URLs
+- Mode 1 (links-only): Skip sitemap discovery, skip domain crawling, analyze only provided URLs
+- Mode 2 (links + domains): Use provided URLs as starting points instead of homepage, include sitemap URLs
+- URLs in --links should be validated and parsed using existing domain extraction logic
+- Need to handle URLs from different domains gracefully in links-only mode
+- Maintain backward compatibility with existing domain-only workflow
+- Provide clear error messages for invalid URL formats or conflicting arguments

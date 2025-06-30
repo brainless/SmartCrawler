@@ -8,6 +8,7 @@ use url::Url;
 pub struct CrawlerConfig {
     pub objective: String,
     pub domains: Arc<Mutex<Vec<String>>>,
+    pub links: Option<Vec<String>>, // URLs provided via --links argument
     pub max_urls_per_domain: usize,
     pub delay_ms: u64,
     pub output_file: Option<String>,
@@ -87,7 +88,14 @@ impl CrawlerConfig {
                     .long("domains")
                     .value_name("DOMAINS")
                     .help("Comma-separated list of domains to crawl")
-                    .required_unless_present("clean-html")
+                    .required_unless_present_any(["clean-html", "links"])
+            )
+            .arg(
+                Arg::new("links")
+                    .short('l')
+                    .long("links")
+                    .value_name("URLS")
+                    .help("Comma-separated list of URLs to analyze. Can be used alone for URL-only mode or with --domains to start crawling from these URLs")
             )
             .arg(
                 Arg::new("max-urls")
@@ -161,19 +169,55 @@ impl CrawlerConfig {
         // Default crawl mode
         let objective = matches.get_one::<String>("objective").unwrap().clone();
 
-        let domains_str = matches.get_one::<String>("domains").unwrap();
-        let domains: Result<Vec<String>, String> = domains_str
-            .split(',')
-            .map(extract_domain_from_url)
-            .collect();
-
-        let domains = match domains {
-            Ok(domains) => domains,
-            Err(e) => {
-                eprintln!("Error parsing domains: {e}");
-                std::process::exit(1);
+        // Parse domains (optional when links are provided)
+        let domains = if let Some(domains_str) = matches.get_one::<String>("domains") {
+            let domains: Result<Vec<String>, String> = domains_str
+                .split(',')
+                .map(extract_domain_from_url)
+                .collect();
+            match domains {
+                Ok(domains) => domains,
+                Err(e) => {
+                    eprintln!("Error parsing domains: {e}");
+                    std::process::exit(1);
+                }
             }
+        } else {
+            Vec::new()
         };
+
+        // Parse links (optional)
+        let links = if let Some(links_str) = matches.get_one::<String>("links") {
+            let links: Result<Vec<String>, String> = links_str
+                .split(',')
+                .map(|s| {
+                    let trimmed = s.trim();
+                    if trimmed.is_empty() {
+                        return Err("URL cannot be empty".to_string());
+                    }
+                    // Validate that it's a proper URL
+                    match Url::parse(trimmed) {
+                        Ok(url) => Ok(url.to_string()),
+                        Err(_) => Err(format!("Invalid URL format: {trimmed}")),
+                    }
+                })
+                .collect();
+            match links {
+                Ok(links) => Some(links),
+                Err(e) => {
+                    eprintln!("Error parsing links: {e}");
+                    std::process::exit(1);
+                }
+            }
+        } else {
+            None
+        };
+
+        // Validate that either domains or links are provided
+        if domains.is_empty() && links.is_none() {
+            eprintln!("Error: Either --domains or --links must be provided");
+            std::process::exit(1);
+        }
 
         let max_urls_per_domain = matches
             .get_one::<String>("max-urls")
@@ -205,6 +249,7 @@ impl CrawlerConfig {
         AppMode::Crawl(CrawlerConfig {
             objective,
             domains: Arc::new(Mutex::new(domains)),
+            links,
             max_urls_per_domain,
             delay_ms,
             output_file,
@@ -236,13 +281,28 @@ impl CrawlerConfig {
         }
 
         let domains = self.domains.lock().unwrap();
-        if domains.is_empty() {
-            return Err("At least one domain must be specified".to_string());
+
+        // Either domains or links must be provided
+        if domains.is_empty() && self.links.is_none() {
+            return Err("Either domains or links must be specified".to_string());
         }
 
+        // Validate domains if provided
         for domain in domains.iter() {
             if domain.trim().is_empty() {
                 return Err("Domain names cannot be empty".to_string());
+            }
+        }
+
+        // Validate links if provided
+        if let Some(links) = &self.links {
+            if links.is_empty() {
+                return Err("Links list cannot be empty when provided".to_string());
+            }
+            for link in links {
+                if link.trim().is_empty() {
+                    return Err("Link URLs cannot be empty".to_string());
+                }
             }
         }
 
@@ -256,6 +316,29 @@ impl CrawlerConfig {
         }
 
         Ok(())
+    }
+
+    /// Check if we're in links-only mode (links provided without domains)
+    pub fn is_links_only_mode(&self) -> bool {
+        let domains = self.domains.lock().unwrap();
+        domains.is_empty() && self.links.is_some()
+    }
+
+    /// Check if we're in links + domains mode (both links and domains provided)
+    pub fn is_links_with_domains_mode(&self) -> bool {
+        let domains = self.domains.lock().unwrap();
+        !domains.is_empty() && self.links.is_some()
+    }
+
+    /// Check if we're in traditional domains-only mode
+    pub fn is_domains_only_mode(&self) -> bool {
+        let domains = self.domains.lock().unwrap();
+        !domains.is_empty() && self.links.is_none()
+    }
+
+    /// Get the links if available
+    pub fn get_links(&self) -> Option<Vec<String>> {
+        self.links.clone()
     }
 }
 
