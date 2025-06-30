@@ -36,6 +36,11 @@ async fn handle_clean_html_mode(config: CleanHtmlConfig) {
             .init();
     }
 
+    // Initialize rustls crypto provider (needed for browser operations)
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("Failed to install rustls crypto provider");
+
     // Validate configuration
     if let Err(e) = config.validate() {
         error!("Configuration error: {}", e);

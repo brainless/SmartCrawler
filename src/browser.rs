@@ -180,6 +180,36 @@ impl Browser {
         Ok(())
     }
 
+    /// Fetches raw HTML content from a URL using the browser
+    /// This method is similar to scrape_url but returns just the raw HTML string
+    /// instead of a structured ScrapedWebPage object
+    pub async fn fetch_html(&self, url: &str) -> Result<String, BrowserError> {
+        self.client.goto(url).await?;
+
+        // Wait for initial page load
+        sleep(Duration::from_millis(1000)).await;
+        let _ = self.client.current_url().await?;
+
+        // Perform human-like scrolling to load dynamic content
+        self.scroll_page_gradually().await?;
+
+        let html = self
+            .client
+            .execute("return document.documentElement.outerHTML;", vec![])
+            .await?;
+
+        let html = match html {
+            Value::String(html) => html,
+            _ => {
+                return Err(BrowserError::ConversionError(
+                    "HTML conversion error".to_string(),
+                ))
+            }
+        };
+
+        Ok(html)
+    }
+
     pub async fn close(self) -> Result<(), BrowserError> {
         self.client.close().await?;
         Ok(())

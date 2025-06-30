@@ -793,7 +793,8 @@ pub fn clean_html(html: &str) -> String {
     cleaned_html
 }
 
-/// Fetches HTML content from a URL using reqwest
+/// Fetches HTML content from a URL using the browser/webdriver
+/// This ensures JavaScript-rendered content is properly loaded and handles dynamic pages
 ///
 /// # Arguments
 /// * `url` - The URL to fetch HTML content from
@@ -801,19 +802,16 @@ pub fn clean_html(html: &str) -> String {
 /// # Returns
 /// * `Result<String, Box<dyn std::error::Error>>` - HTML content or error
 async fn fetch_html_from_url(url: &str) -> Result<String, Box<dyn std::error::Error>> {
-    let client = reqwest::Client::new();
-    let response = client.get(url).send().await?;
+    use crate::browser::Browser;
 
-    if !response.status().is_success() {
-        return Err(format!(
-            "HTTP error: {} {}",
-            response.status().as_u16(),
-            response.status().canonical_reason().unwrap_or("Unknown")
-        )
-        .into());
-    }
+    let browser = Browser::new().await?;
 
-    let html_content = response.text().await?;
+    // Use browser to fetch raw HTML - this will handle JavaScript and dynamic content
+    let html_content = browser.fetch_html(url).await?;
+
+    // Close the browser to clean up resources
+    browser.close().await?;
+
     Ok(html_content)
 }
 
@@ -2093,7 +2091,13 @@ mod tests {
     #[tokio::test]
     async fn test_fetch_html_from_url_invalid_url() {
         // Test with invalid URL that doesn't exist
+        // Note: This test may fail if WebDriver server is not running
+        // In production, this would be handled by the browser's error handling
         let result = fetch_html_from_url("https://this-domain-does-not-exist-12345.com").await;
+
+        // The test should fail, but the exact error depends on WebDriver availability
+        // If WebDriver is not available, it will fail with "Browser error"
+        // If WebDriver is available, it will fail with navigation error
         assert!(
             result.is_err(),
             "fetch_html_from_url should fail with invalid URL"
