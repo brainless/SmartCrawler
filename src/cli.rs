@@ -19,7 +19,7 @@ pub struct CrawlerConfig {
 
 #[derive(Debug, Clone)]
 pub struct CleanHtmlConfig {
-    pub input_file: String,
+    pub input_source: String, // Can be file path or URL
     pub output_file: String,
     pub verbose: bool,
 }
@@ -28,6 +28,12 @@ pub struct CleanHtmlConfig {
 pub enum AppMode {
     Crawl(CrawlerConfig),
     CleanHtml(CleanHtmlConfig),
+}
+
+/// Check if a string is a valid URL (starts with http:// or https://)
+fn is_url(input: &str) -> bool {
+    let trimmed = input.trim();
+    trimmed.starts_with("http://") || trimmed.starts_with("https://")
 }
 
 /// Extract domain from a URL string, handling both full URLs and plain domains
@@ -122,9 +128,9 @@ impl CrawlerConfig {
             .arg(
                 Arg::new("clean-html")
                     .long("clean-html")
-                    .value_names(["INPUT_FILE", "OUTPUT_FILE"])
+                    .value_names(["INPUT_SOURCE", "OUTPUT_FILE"])
                     .num_args(2)
-                    .help("Clean HTML file by removing unwanted elements and attributes. Usage: --clean-html <input.html> <output.html>")
+                    .help("Clean HTML by removing unwanted elements and attributes. Usage: --clean-html <input.html|url> <output.html>. Supports local files or URLs (http/https).")
             )
             .arg(
                 Arg::new("verbose")
@@ -155,12 +161,12 @@ impl CrawlerConfig {
             let args: Vec<&String> = clean_html_args.collect();
             if args.len() != 2 {
                 eprintln!(
-                    "Error: --clean-html requires exactly 2 arguments: <input_file> <output_file>"
+                    "Error: --clean-html requires exactly 2 arguments: <input_source> <output_file>"
                 );
                 std::process::exit(1);
             }
             return AppMode::CleanHtml(CleanHtmlConfig {
-                input_file: args[0].clone(),
+                input_source: args[0].clone(),
                 output_file: args[1].clone(),
                 verbose,
             });
@@ -264,13 +270,28 @@ impl CleanHtmlConfig {
     pub fn validate(&self) -> Result<(), String> {
         use std::path::Path;
 
-        if !Path::new(&self.input_file).exists() {
-            return Err(format!("Input file does not exist: {}", self.input_file));
+        // Check if input is URL or file
+        if is_url(&self.input_source) {
+            // Validate URL format
+            match Url::parse(&self.input_source) {
+                Ok(_) => {} // URL is valid
+                Err(e) => return Err(format!("Invalid URL format: {e}")),
+            }
+        } else {
+            // Validate local file exists
+            if !Path::new(&self.input_source).exists() {
+                return Err(format!("Input file does not exist: {}", self.input_source));
+            }
         }
 
         // Note: We allow output files in any directory - the file operation will fail if directory doesn't exist
 
         Ok(())
+    }
+
+    /// Check if the input source is a URL
+    pub fn is_url_source(&self) -> bool {
+        is_url(&self.input_source)
     }
 }
 
@@ -412,5 +433,27 @@ mod tests {
         assert!(extract_domain_from_url("/").is_err());
         assert!(extract_domain_from_url("://example.com").is_err());
         assert!(extract_domain_from_url("https://").is_err());
+    }
+
+    #[test]
+    fn test_is_url() {
+        // Test valid URLs
+        assert!(is_url("https://example.com"));
+        assert!(is_url("http://example.com"));
+        assert!(is_url("https://www.example.com/path?query=value"));
+        assert!(is_url("http://localhost:8080"));
+
+        // Test with whitespace
+        assert!(is_url("  https://example.com  "));
+        assert!(is_url("  http://example.com  "));
+
+        // Test non-URLs
+        assert!(!is_url("example.com"));
+        assert!(!is_url("www.example.com"));
+        assert!(!is_url("/path/to/file.html"));
+        assert!(!is_url("file.html"));
+        assert!(!is_url(""));
+        assert!(!is_url("ftp://example.com"));
+        assert!(!is_url("mailto:test@example.com"));
     }
 }

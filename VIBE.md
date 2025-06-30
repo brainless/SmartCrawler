@@ -554,3 +554,24 @@ I would like to pass links to pages with a `--links` argument. There are two mod
 - Need to handle URLs from different domains gracefully in links-only mode
 - Maintain backward compatibility with existing domain-only workflow
 - Provide clear error messages for invalid URL formats or conflicting arguments
+
+## GitHub Issue #37: Change clean-html mode to work with given URL instead of local path
+
+### User Request
+As a user I would like to use the --clean-html mode in the CLI to use our crawler to fetch the given URL if we detect a URL instead of local path in the first parameter. The second parameter should continue to be the local output path.
+
+### Task Plan
+1. ✅ Save user request and task plan to VIBE.md
+2. Create new branch for the task (feature/clean-html-url-support)
+3. Analyze current --clean-html implementation
+4. Modify CLI args to detect URL vs local path for --clean-html
+5. Implement URL fetching in clean-html mode
+6. Add tests for URL detection and fetching
+7. Run formatters, linters and tests
+8. Commit and push to new branch
+
+### Implementation Details
+- Need to detect if first parameter is a URL (starts with http:// or https://) vs local file path
+- If URL detected, fetch the content using existing HTTP client
+- Second parameter remains the output path for cleaned HTML
+- Maintain backward compatibility with existing local file functionality

@@ -793,6 +793,30 @@ pub fn clean_html(html: &str) -> String {
     cleaned_html
 }
 
+/// Fetches HTML content from a URL using reqwest
+///
+/// # Arguments
+/// * `url` - The URL to fetch HTML content from
+///
+/// # Returns
+/// * `Result<String, Box<dyn std::error::Error>>` - HTML content or error
+async fn fetch_html_from_url(url: &str) -> Result<String, Box<dyn std::error::Error>> {
+    let client = reqwest::Client::new();
+    let response = client.get(url).send().await?;
+
+    if !response.status().is_success() {
+        return Err(format!(
+            "HTTP error: {} {}",
+            response.status().as_u16(),
+            response.status().canonical_reason().unwrap_or("Unknown")
+        )
+        .into());
+    }
+
+    let html_content = response.text().await?;
+    Ok(html_content)
+}
+
 /// Reads an HTML file, cleans it using the clean_html function, and writes it to an output file
 ///
 /// # Arguments
@@ -818,6 +842,53 @@ pub fn clean_html_file(
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Read the input HTML file
     let html_content = std::fs::read_to_string(input_path)?;
+
+    // Clean the HTML
+    let cleaned_html = clean_html(&html_content);
+
+    // Write the cleaned HTML to the output file
+    std::fs::write(output_path, cleaned_html)?;
+
+    Ok(())
+}
+
+/// Cleans HTML from either a local file or URL, and writes it to an output file
+///
+/// # Arguments
+/// * `input_source` - Path to the input HTML file or URL (http/https)
+/// * `output_path` - Path where the cleaned HTML should be written
+///
+/// # Returns
+/// * `Result<(), Box<dyn std::error::Error>>` - Success or error information
+///
+/// # Examples
+/// ```rust,no_run
+/// use smart_crawler::content::clean_html_source;
+///
+/// #[tokio::main]
+/// async fn main() -> Result<(), Box<dyn std::error::Error>> {
+///     // Clean an HTML file
+///     clean_html_source("input.html", "output.html").await?;
+///     
+///     // Clean HTML from a URL
+///     clean_html_source("https://example.com", "output.html").await?;
+///     Ok(())
+/// }
+/// ```
+pub async fn clean_html_source(
+    input_source: &str,
+    output_path: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Determine if input is URL or file path
+    let html_content = if input_source.trim().starts_with("http://")
+        || input_source.trim().starts_with("https://")
+    {
+        // Fetch from URL
+        fetch_html_from_url(input_source).await?
+    } else {
+        // Read from file
+        std::fs::read_to_string(input_source)?
+    };
 
     // Clean the HTML
     let cleaned_html = clean_html(&html_content);
@@ -1951,4 +2022,85 @@ mod tests {
         assert!(cleaned.contains("<h1>Main Article</h1>"));
         assert!(cleaned.contains("<p>Important content that should remain after cleaning.</p>"));
     }
+
+    #[tokio::test]
+    async fn test_clean_html_source_with_file() {
+        // Create a temporary HTML file for testing
+        let temp_dir = std::env::temp_dir();
+        let input_file = temp_dir.join("test_input.html");
+        let output_file = temp_dir.join("test_output.html");
+
+        let test_html = r#"
+            <html>
+                <head>
+                    <script>alert('test');</script>
+                    <style>body { color: red; }</style>
+                </head>
+                <body>
+                    <nav>Navigation</nav>
+                    <main>
+                        <h1>Test Title</h1>
+                        <p>Test content</p>
+                    </main>
+                    <footer>Footer</footer>
+                </body>
+            </html>
+        "#;
+
+        // Write test HTML to file
+        std::fs::write(&input_file, test_html).expect("Failed to write test file");
+
+        // Test cleaning from file
+        let result =
+            clean_html_source(input_file.to_str().unwrap(), output_file.to_str().unwrap()).await;
+
+        assert!(result.is_ok(), "clean_html_source should succeed");
+
+        // Read and verify output
+        let cleaned_content =
+            std::fs::read_to_string(&output_file).expect("Failed to read output file");
+
+        assert!(!cleaned_content.contains("alert('test')"));
+        assert!(!cleaned_content.contains("color: red"));
+        assert!(!cleaned_content.contains("Navigation"));
+        assert!(!cleaned_content.contains("Footer"));
+        assert!(cleaned_content.contains("Test Title"));
+        assert!(cleaned_content.contains("Test content"));
+
+        // Clean up
+        let _ = std::fs::remove_file(&input_file);
+        let _ = std::fs::remove_file(&output_file);
+    }
+
+    #[tokio::test]
+    async fn test_clean_html_source_with_invalid_file() {
+        let temp_dir = std::env::temp_dir();
+        let output_file = temp_dir.join("test_output.html");
+
+        // Test with non-existent file
+        let result =
+            clean_html_source("/non/existent/file.html", output_file.to_str().unwrap()).await;
+
+        assert!(
+            result.is_err(),
+            "clean_html_source should fail with non-existent file"
+        );
+
+        // Clean up
+        let _ = std::fs::remove_file(&output_file);
+    }
+
+    #[tokio::test]
+    async fn test_fetch_html_from_url_invalid_url() {
+        // Test with invalid URL that doesn't exist
+        let result = fetch_html_from_url("https://this-domain-does-not-exist-12345.com").await;
+        assert!(
+            result.is_err(),
+            "fetch_html_from_url should fail with invalid URL"
+        );
+    }
+
+    // Note: We can't easily test successful URL fetching in unit tests without
+    // setting up a mock server, so we'll rely on integration tests for that.
+    // The URL detection logic is already tested in cli.rs
 }
