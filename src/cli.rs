@@ -53,10 +53,10 @@ fn extract_domain_from_url(input: &str) -> Result<String, String> {
             if let Some(host) = url.host_str() {
                 Ok(host.to_string())
             } else {
-                Err(format!("No valid domain found in URL: {}", trimmed))
+                Err(format!("No valid domain found in URL: {trimmed}"))
             }
         }
-        Err(e) => Err(format!("Failed to parse URL '{}': {}", trimmed, e)),
+        Err(e) => Err(format!("Failed to parse URL '{trimmed}': {e}")),
     }
 }
 
@@ -170,7 +170,7 @@ impl CrawlerConfig {
         let domains = match domains {
             Ok(domains) => domains,
             Err(e) => {
-                eprintln!("Error parsing domains: {}", e);
+                eprintln!("Error parsing domains: {e}");
                 std::process::exit(1);
             }
         };

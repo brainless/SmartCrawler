@@ -79,8 +79,7 @@ impl ClaudeClient {
                 .await
                 .unwrap_or_else(|_| "Unknown error".to_string());
             return Err(ClaudeError::ApiError(format!(
-                "API request failed: {}",
-                error_text
+                "API request failed: {error_text}"
             )));
         }
 

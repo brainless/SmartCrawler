@@ -75,7 +75,7 @@ impl Browser {
                 if href.starts_with("http") {
                     href.to_string()
                 } else if href.starts_with("//") {
-                    format!("https:{}", href)
+                    format!("https:{href}")
                 } else if href.starts_with('/') {
                     if let Ok(base_url) = url::Url::parse(url) {
                         if let Some(domain) = base_url.host_str() {
@@ -168,7 +168,7 @@ impl Browser {
             }
 
             // Scroll down by the step amount
-            let scroll_script = format!("window.scrollBy(0, {});", scroll_step);
+            let scroll_script = format!("window.scrollBy(0, {scroll_step});");
             if (self.client.execute(&scroll_script, vec![]).await).is_err() {
                 break;
             }

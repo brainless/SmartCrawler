@@ -29,8 +29,8 @@ pub trait LLM {
         let prompt = format!(
             r#"You are helping a web crawler generate relevant keywords for URL filtering based on a crawling objective.
 
-Domain: {}
-Objective: {}
+Domain: {domain}
+Objective: {objective}
 
 INSTRUCTIONS:
 1. Analyze the objective to identify the most relevant keywords for URL path matching
@@ -42,8 +42,7 @@ INSTRUCTIONS:
 IMPORTANT: Return ONLY a JSON array of keywords as strings.
 Example format: ["pricing", "price", "cost", "plans", "subscription", "billing"]
 
-Keywords:"#,
-            domain, objective
+Keywords:"#
         );
 
         let response = self.send_message(&prompt).await?;

@@ -85,7 +85,7 @@ impl SitemapParser {
     }
 
     async fn check_robots_txt(&self, domain: &str) -> Result<Vec<String>, SitemapError> {
-        let robots_url = format!("https://{}/robots.txt", domain);
+        let robots_url = format!("https://{domain}/robots.txt");
         let response = self.client.get(&robots_url).send().await?;
 
         if !response.status().is_success() {
