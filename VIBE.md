@@ -478,3 +478,25 @@ Need to create a product landing page that:
 - Demo video section with YouTube placeholder
 - Installation and usage instructions
 - Professional appearance suitable for open source project
+
+## GitHub Issue #31: Allow passing in root URL as domain
+
+### User Request
+Allow passing "http://example.com" or "https://example.com/" as the domain argument in CLI. Trailing slash should be optional. Please extract domain from them.
+
+### Task Plan
+1. ✅ Create new branch for GitHub issue #31
+2. ✅ Save user request and task plan to VIBE.md  
+3. Analyze current domain parsing logic in CLI args
+4. Implement URL-to-domain extraction function
+5. Update CLI argument parsing to handle full URLs
+6. Add tests for URL domain extraction
+7. Test with various URL formats
+8. Commit and push changes
+
+### Implementation Details
+- Need to handle both HTTP and HTTPS URLs
+- Remove trailing slashes automatically
+- Extract just the domain part from full URLs
+- Maintain backward compatibility with existing domain-only inputs
+- Add proper error handling for malformed URLs

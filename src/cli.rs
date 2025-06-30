@@ -2,6 +2,7 @@ use crate::url_ranking::UrlRankingConfig;
 use clap::{Arg, Command};
 use std::env;
 use std::sync::{Arc, Mutex};
+use url::Url;
 
 #[derive(Debug, Clone)]
 pub struct CrawlerConfig {
@@ -26,6 +27,37 @@ pub struct CleanHtmlConfig {
 pub enum AppMode {
     Crawl(CrawlerConfig),
     CleanHtml(CleanHtmlConfig),
+}
+
+/// Extract domain from a URL string, handling both full URLs and plain domains
+/// Removes trailing slashes and returns just the domain part
+/// Examples:
+/// - "https://example.com/" -> "example.com"
+/// - "http://example.com" -> "example.com"
+/// - "example.com" -> "example.com"
+fn extract_domain_from_url(input: &str) -> Result<String, String> {
+    let trimmed = input.trim();
+
+    // If it doesn't contain ://, assume it's already a domain
+    if !trimmed.contains("://") {
+        let domain = trimmed.trim_end_matches('/').to_string();
+        if domain.is_empty() {
+            return Err("Domain cannot be empty".to_string());
+        }
+        return Ok(domain);
+    }
+
+    // Parse as URL
+    match Url::parse(trimmed) {
+        Ok(url) => {
+            if let Some(host) = url.host_str() {
+                Ok(host.to_string())
+            } else {
+                Err(format!("No valid domain found in URL: {trimmed}"))
+            }
+        }
+        Err(e) => Err(format!("Failed to parse URL '{trimmed}': {e}")),
+    }
 }
 
 impl CrawlerConfig {
@@ -130,11 +162,18 @@ impl CrawlerConfig {
         let objective = matches.get_one::<String>("objective").unwrap().clone();
 
         let domains_str = matches.get_one::<String>("domains").unwrap();
-        let domains: Vec<String> = domains_str
+        let domains: Result<Vec<String>, String> = domains_str
             .split(',')
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
+            .map(extract_domain_from_url)
             .collect();
+
+        let domains = match domains {
+            Ok(domains) => domains,
+            Err(e) => {
+                eprintln!("Error parsing domains: {e}");
+                std::process::exit(1);
+            }
+        };
 
         let max_urls_per_domain = matches
             .get_one::<String>("max-urls")
@@ -217,5 +256,78 @@ impl CrawlerConfig {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_extract_domain_from_url() {
+        // Test full URLs with https
+        assert_eq!(
+            extract_domain_from_url("https://example.com").unwrap(),
+            "example.com"
+        );
+        assert_eq!(
+            extract_domain_from_url("https://example.com/").unwrap(),
+            "example.com"
+        );
+        assert_eq!(
+            extract_domain_from_url("https://www.example.com/path?query=value").unwrap(),
+            "www.example.com"
+        );
+
+        // Test full URLs with http
+        assert_eq!(
+            extract_domain_from_url("http://example.com").unwrap(),
+            "example.com"
+        );
+        assert_eq!(
+            extract_domain_from_url("http://example.com/").unwrap(),
+            "example.com"
+        );
+
+        // Test plain domains (existing behavior)
+        assert_eq!(
+            extract_domain_from_url("example.com").unwrap(),
+            "example.com"
+        );
+        assert_eq!(
+            extract_domain_from_url("www.example.com").unwrap(),
+            "www.example.com"
+        );
+        assert_eq!(
+            extract_domain_from_url("subdomain.example.com").unwrap(),
+            "subdomain.example.com"
+        );
+
+        // Test trimming trailing slashes from plain domains
+        assert_eq!(
+            extract_domain_from_url("example.com/").unwrap(),
+            "example.com"
+        );
+        assert_eq!(
+            extract_domain_from_url("example.com//").unwrap(),
+            "example.com"
+        );
+
+        // Test whitespace handling
+        assert_eq!(
+            extract_domain_from_url("  https://example.com  ").unwrap(),
+            "example.com"
+        );
+        assert_eq!(
+            extract_domain_from_url("  example.com  ").unwrap(),
+            "example.com"
+        );
+
+        // Test error cases
+        assert!(extract_domain_from_url("").is_err());
+        assert!(extract_domain_from_url("   ").is_err());
+        assert!(extract_domain_from_url("/").is_err());
+        assert!(extract_domain_from_url("://example.com").is_err());
+        assert!(extract_domain_from_url("https://").is_err());
     }
 }

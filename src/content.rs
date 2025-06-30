@@ -28,7 +28,7 @@ impl StructuredContent {
     pub fn to_prompt(&self) -> String {
         match self {
             StructuredContent::LongForm(content) => {
-                format!("ARTICLE CONTENT:\n\n{}\n", content)
+                format!("ARTICLE CONTENT:\n\n{content}\n")
             }
             StructuredContent::ItemList(items) => {
                 let mut prompt = String::from("ITEM LIST:\n\n");
@@ -37,17 +37,17 @@ impl StructuredContent {
                     prompt.push_str(&format!("{}. {}\n", index + 1, item.title));
 
                     if let Some(description) = &item.description {
-                        prompt.push_str(&format!("   Description: {}\n", description));
+                        prompt.push_str(&format!("   Description: {description}\n"));
                     }
 
                     if let Some(url) = &item.url {
-                        prompt.push_str(&format!("   URL: {}\n", url));
+                        prompt.push_str(&format!("   URL: {url}\n"));
                     }
 
                     if !item.metadata.is_empty() {
                         prompt.push_str("   Metadata:\n");
                         for (key, value) in &item.metadata {
-                            prompt.push_str(&format!("     {}: {}\n", key, value));
+                            prompt.push_str(&format!("     {key}: {value}\n"));
                         }
                     }
 
@@ -110,17 +110,17 @@ impl StructuredContent {
                         prompt.push_str(&format!("{}. {}\n", index + 1, item.title));
 
                         if let Some(description) = &item.description {
-                            prompt.push_str(&format!("   Description: {}\n", description));
+                            prompt.push_str(&format!("   Description: {description}\n"));
                         }
 
                         if let Some(url) = &item.url {
-                            prompt.push_str(&format!("   URL: {}\n", url));
+                            prompt.push_str(&format!("   URL: {url}\n"));
                         }
 
                         if !item.metadata.is_empty() {
                             prompt.push_str("   Metadata:\n");
                             for (key, value) in &item.metadata {
-                                prompt.push_str(&format!("     {}: {}\n", key, value));
+                                prompt.push_str(&format!("     {key}: {value}\n"));
                             }
                         }
 

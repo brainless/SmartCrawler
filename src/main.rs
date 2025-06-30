@@ -55,7 +55,7 @@ async fn handle_clean_html_mode(config: CleanHtmlConfig) {
         }
         Err(e) => {
             error!("HTML cleaning failed: {}", e);
-            eprintln!("❌ Error: {}", e);
+            eprintln!("❌ Error: {e}");
             std::process::exit(1);
         }
     }
@@ -134,7 +134,7 @@ async fn handle_crawl_mode(config: CrawlerConfig) {
 
                 println!("Analysis:");
                 for analysis_item in &result.analysis {
-                    println!("- {}", analysis_item);
+                    println!("- {analysis_item}");
                 }
 
                 if !result.extracted_entities.is_empty() {

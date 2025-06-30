@@ -58,7 +58,7 @@ impl Person {
             full_name.clone()
         } else {
             match (&self.first_name, &self.last_name) {
-                (Some(first), Some(last)) => format!("{} {}", first, last),
+                (Some(first), Some(last)) => format!("{first} {last}"),
                 (Some(first), None) => first.clone(),
                 (None, Some(last)) => last.clone(),
                 (None, None) => "Unknown".to_string(),

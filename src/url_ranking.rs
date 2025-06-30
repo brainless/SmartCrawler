@@ -253,7 +253,7 @@ mod tests {
     fn test_url_ranking_candidate_limit() {
         let ranker = UrlRanker::with_default_config();
         let urls: Vec<String> = (1..=20)
-            .map(|i| format!("https://example.com/page{}", i))
+            .map(|i| format!("https://example.com/page{i}"))
             .collect();
         let keywords = vec!["test".to_string()];
 

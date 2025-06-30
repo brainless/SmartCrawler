@@ -181,7 +181,7 @@ impl SmartCrawler {
                 "No URLs found in sitemap for {}, scraping root URL for links",
                 domain
             );
-            let root_url = format!("https://{}", domain);
+            let root_url = format!("https://{domain}");
 
             // Scrape the root URL to extract all links
             match browser.scrape_url(&root_url).await {
@@ -193,7 +193,7 @@ impl SmartCrawler {
                         if let Ok(parsed_url) = url::Url::parse(url) {
                             if let Some(url_domain) = parsed_url.host_str() {
                                 return url_domain == domain
-                                    || url_domain.ends_with(&format!(".{}", domain));
+                                    || url_domain.ends_with(&format!(".{domain}"));
                             }
                         }
                         false
@@ -226,7 +226,7 @@ impl SmartCrawler {
 
         // Only retain URLs that are one level deeper
         let urls_one_level_deeper =
-            select_urls_one_level_deeper(urls_to_analyze.clone(), format!("https://{}", domain));
+            select_urls_one_level_deeper(urls_to_analyze.clone(), format!("https://{domain}"));
 
         // Step 1.5: Add URLs that match objective keywords (improvement from issue #19)
         let objective_matching_urls: Vec<String> = urls_to_analyze
@@ -361,7 +361,7 @@ impl SmartCrawler {
                 // Ask user if they want to continue
                 println!("\nObjective has been met! Current analysis:");
                 for entry in &analysis {
-                    println!("{}", entry);
+                    println!("{entry}");
                 }
 
                 print!("\nContinue crawling remaining URLs? (y/N): ");
@@ -455,7 +455,7 @@ impl SmartCrawler {
                 }
                 Err(e) => {
                     tracing::warn!("Failed to scrape URL {}: {}", url, e);
-                    analysis.push(format!("URL: {}\nScraping failed: {}", url, e));
+                    analysis.push(format!("URL: {url}\nScraping failed: {e}"));
                 }
             }
         }
@@ -522,8 +522,7 @@ fn select_urls_one_level_deeper<T: AsRef<str>>(urls: Vec<T>, base_url: T) -> Vec
         if let Ok(parsed_url) = url::Url::parse(url_str) {
             // Check if URL is from the same domain
             if let Some(url_domain) = parsed_url.host_str() {
-                if url_domain != base_domain && !url_domain.ends_with(&format!(".{}", base_domain))
-                {
+                if url_domain != base_domain && !url_domain.ends_with(&format!(".{base_domain}")) {
                     continue;
                 }
 
