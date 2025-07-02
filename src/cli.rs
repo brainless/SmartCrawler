@@ -25,9 +25,17 @@ pub struct CleanHtmlConfig {
 }
 
 #[derive(Debug, Clone)]
+pub struct BoundingBoxConfig {
+    pub url: String,
+    pub tolerance: f64,
+    pub verbose: bool,
+}
+
+#[derive(Debug, Clone)]
 pub enum AppMode {
     Crawl(CrawlerConfig),
     CleanHtml(CleanHtmlConfig),
+    BoundingBox(BoundingBoxConfig),
 }
 
 /// Check if a string is a valid URL (starts with http:// or https://)
@@ -86,7 +94,7 @@ impl CrawlerConfig {
                     .long("objective")
                     .value_name("OBJECTIVE")
                     .help("The crawling objective - what information to look for")
-                    .required_unless_present("clean-html")
+                    .required_unless_present_any(["clean-html", "bounding-box"])
             )
             .arg(
                 Arg::new("domains")
@@ -94,7 +102,7 @@ impl CrawlerConfig {
                     .long("domains")
                     .value_name("DOMAINS")
                     .help("Comma-separated list of domains to crawl")
-                    .required_unless_present_any(["clean-html", "links"])
+                    .required_unless_present_any(["clean-html", "links", "bounding-box"])
             )
             .arg(
                 Arg::new("links")
@@ -152,9 +160,37 @@ impl CrawlerConfig {
                     .help("Multiplier for candidate URLs sent to LLM (candidate_count = max_urls * multiplier)")
                     .default_value("3")
             )
+            .arg(
+                Arg::new("bounding-box")
+                    .long("bounding-box")
+                    .value_name("URL")
+                    .help("Analyze bounding boxes on a webpage and visualize similar-sized elements")
+            )
+            .arg(
+                Arg::new("tolerance")
+                    .long("tolerance")
+                    .value_name("PIXELS")
+                    .help("Tolerance for grouping elements by similar dimensions (in pixels)")
+                    .default_value("5.0")
+            )
             .get_matches();
 
         let verbose = matches.get_flag("verbose");
+
+        // Check if bounding-box mode is requested
+        if let Some(url) = matches.get_one::<String>("bounding-box") {
+            let tolerance = matches
+                .get_one::<String>("tolerance")
+                .unwrap()
+                .parse()
+                .unwrap_or(5.0);
+            
+            return AppMode::BoundingBox(BoundingBoxConfig {
+                url: url.clone(),
+                tolerance,
+                verbose,
+            });
+        }
 
         // Check if clean-html mode is requested
         if let Some(clean_html_args) = matches.get_many::<String>("clean-html") {

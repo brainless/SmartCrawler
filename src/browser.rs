@@ -31,6 +31,10 @@ impl Browser {
         Ok(Self { client })
     }
 
+    pub fn client(&self) -> &Client {
+        &self.client
+    }
+
     pub async fn scrape_url(&self, url: &str) -> Result<ScrapedWebPage, BrowserError> {
         self.client.goto(url).await?;
 

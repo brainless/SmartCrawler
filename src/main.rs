@@ -1,7 +1,9 @@
 use dotenv::dotenv;
 use smart_crawler::{
+    bounding_box::BoundingBoxAnalyzer,
+    browser::Browser,
     claude::ClaudeClient, // Import ClaudeClient for instantiation
-    cli::{AppMode, CleanHtmlConfig, CrawlerConfig},
+    cli::{AppMode, BoundingBoxConfig, CleanHtmlConfig, CrawlerConfig},
     content::clean_html_source,
     crawler::SmartCrawler,
 };
@@ -18,9 +20,78 @@ async fn main() {
         AppMode::CleanHtml(clean_config) => {
             handle_clean_html_mode(clean_config).await;
         }
+        AppMode::BoundingBox(bbox_config) => {
+            handle_bounding_box_mode(bbox_config).await;
+        }
         AppMode::Crawl(config) => {
             handle_crawl_mode(config).await;
         }
+    }
+}
+
+async fn handle_bounding_box_mode(config: BoundingBoxConfig) {
+    // Initialize logging
+    if config.verbose {
+        tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::DEBUG)
+            .init();
+    } else {
+        tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::INFO)
+            .init();
+    }
+
+    // Initialize rustls crypto provider
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("Failed to install rustls crypto provider");
+
+    info!("Starting bounding box analysis");
+    info!("URL: {}", config.url);
+    info!("Tolerance: {} pixels", config.tolerance);
+
+    // Create browser instance
+    let browser = match Browser::new().await {
+        Ok(browser) => browser,
+        Err(e) => {
+            error!("Failed to create browser: {}", e);
+            eprintln!("❌ Error: Failed to create browser: {}", e);
+            eprintln!("Make sure you have a WebDriver server running on http://localhost:4444");
+            eprintln!("You can start one using: docker run -d -p 4444:4444 selenium/standalone-chrome");
+            std::process::exit(1);
+        }
+    };
+
+    // Navigate to the URL
+    println!("🌐 Navigating to: {}", config.url);
+    
+    // Create analyzer and perform analysis
+    let analyzer = BoundingBoxAnalyzer::new(&browser);
+    
+    match analyzer.navigate_and_analyze(&config.url, config.tolerance).await {
+        Ok(groups) => {
+            println!("✅ Bounding box analysis completed!");
+            analyzer.print_analysis(&groups);
+            
+            println!("\n🎨 Visualization has been added to the webpage.");
+            println!("📋 Legend is displayed in the top-right corner.");
+            println!("🔍 Groups with multiple elements are highlighted with colored borders.");
+            println!("⌨️  Press Ctrl+C to exit and close the browser.");
+            
+            // Keep the browser open for visualization
+            tokio::signal::ctrl_c().await.expect("Failed to listen for ctrl-c");
+            println!("\n👋 Closing browser...");
+        }
+        Err(e) => {
+            error!("Bounding box analysis failed: {}", e);
+            eprintln!("❌ Error: {}", e);
+            std::process::exit(1);
+        }
+    }
+
+    // Close browser
+    if let Err(e) = browser.close().await {
+        error!("Failed to close browser: {}", e);
     }
 }
 
