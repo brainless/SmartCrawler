@@ -1,9 +1,10 @@
 use dotenv::dotenv;
 use smart_crawler::{
     claude::ClaudeClient, // Import ClaudeClient for instantiation
-    cli::{AppMode, CleanHtmlConfig, CrawlerConfig},
+    cli::{AppMode, CleanHtmlConfig, CrawlerConfig, TestConfig},
     content::clean_html_source,
     crawler::SmartCrawler,
+    test_runner::TestRunner,
 };
 use std::sync::Arc; // Import Arc
 use tracing::{error, info};
@@ -20,6 +21,9 @@ async fn main() {
         }
         AppMode::Crawl(config) => {
             handle_crawl_mode(config).await;
+        }
+        AppMode::Test(test_config) => {
+            handle_test_mode(test_config).await;
         }
     }
 }
@@ -174,5 +178,73 @@ async fn handle_crawl_mode(config: CrawlerConfig) {
             error!("Crawling failed: {}", e);
             std::process::exit(1);
         }
+    }
+}
+
+async fn handle_test_mode(config: TestConfig) {
+    // Initialize logging
+    if config.verbose {
+        tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::DEBUG)
+            .init();
+    } else {
+        tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::INFO)
+            .init();
+    }
+
+    info!("Starting test mode");
+    info!("Test file: {}", config.test_file);
+    info!("Create issues: {}", config.create_issues);
+
+    // Initialize rustls crypto provider
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("Failed to install rustls crypto provider");
+
+    // Load test suite
+    let test_suite = match TestRunner::load_test_suite(&config.test_file).await {
+        Ok(suite) => suite,
+        Err(e) => {
+            error!(
+                "Failed to load test suite from '{}': {}",
+                config.test_file, e
+            );
+            std::process::exit(1);
+        }
+    };
+
+    info!(
+        "Loaded {} test(s) from {}",
+        test_suite.tests.len(),
+        config.test_file
+    );
+
+    // Create Claude client
+    let claude_client = match ClaudeClient::new() {
+        Ok(client) => Arc::new(client),
+        Err(e) => {
+            error!("Failed to create ClaudeClient: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    // Create test runner and run tests
+    let test_runner = TestRunner::new(claude_client);
+    let results = test_runner.run_test_suite(test_suite).await;
+
+    // Generate and display report
+    let report = test_runner
+        .generate_report(results.clone(), config.create_issues)
+        .await;
+    println!("\n{}", report);
+
+    // Exit with failure code if any tests failed
+    let failed_tests = results.iter().filter(|r| !r.passed).count();
+    if failed_tests > 0 {
+        error!("{} test(s) failed", failed_tests);
+        std::process::exit(1);
+    } else {
+        info!("All tests passed!");
     }
 }

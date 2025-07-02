@@ -608,3 +608,33 @@ I would like the HTML cleaner to remove all HTML comments.
 - **Comment Removal**: Remove all HTML comments `<!-- ... -->`
 - **Preserve Existing Functionality**: Keep all current HTML cleaning behavior
 - **Add Tests**: Test image filtering with various scenarios and comment removal
+
+## GitHub Issue #41: Real world tests for single page data scraping
+
+### User Request
+Setup an automated test mechanism where user can provide a URL and expected data:
+- Claude Code should run the tests, which run the crawler/scraper and check expected data is found
+- User provides test with URL and expected data in a simple JSON file
+- Claude Code should interact and detect which parts of algorithm needs improvement
+- Claude Code should create GitHub issue describing detected issue for later tasks
+- Each created issue should mention development workflow from Claude.md
+- Create simple documentation about writing tests using JSON file and how to run them
+- Create mock test that user can try out
+
+### Task Plan
+1. ✅ Save user request and task plan to VIBE.md
+2. Create new branch for automated testing feature (feature/real-world-tests)
+3. Design JSON test file structure and test runner architecture
+4. Implement automated test runner that runs crawler and validates results
+5. Add functionality to create GitHub issues when tests fail with detected problems
+6. Create documentation for writing and running tests with JSON files
+7. Create mock test example that users can try
+8. Run formatters, linters, tests and commit changes
+
+### Implementation Details
+- **JSON Test Structure**: Simple format with URL, objective, expected entities/data
+- **Test Runner**: Automated system that executes crawler with test parameters
+- **Validation Logic**: Compare actual crawler results against expected data
+- **Issue Creation**: Automatically create GitHub issues when tests fail with analysis
+- **Documentation**: Clear guide for users to write and run their own tests
+- **Mock Example**: Working test case that demonstrates the system

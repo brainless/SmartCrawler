@@ -1,0 +1,59 @@
+{
+  "tests": [
+    {
+      "name": "Anthropic About Page Team Test",
+      "description": "Test that we can extract team member information from Anthropic's about page",
+      "url": "https://www.anthropic.com/company",
+      "objective": "Find information about company leadership and team members",
+      "expected_entities": {
+        "persons": [
+          {
+            "name_contains": "dario"
+          }
+        ],
+        "organizations": [
+          {
+            "name_contains": "anthropic"
+          }
+        ],
+        "minimum_entities_count": 1
+      },
+      "timeout_seconds": 45
+    },
+    {
+      "name": "OpenAI Research Page Test",
+      "description": "Test extraction of research information and team from OpenAI",
+      "url": "https://openai.com/research/", 
+      "objective": "Find research papers, publications and researcher information",
+      "expected_entities": {
+        "organizations": [
+          {
+            "name_contains": "openai"
+          }
+        ],
+        "minimum_entities_count": 1
+      },
+      "timeout_seconds": 30
+    },
+    {
+      "name": "GitHub About Page Test",
+      "description": "Test extraction of company information from GitHub's about page",
+      "url": "https://github.com/about",
+      "objective": "Find company information, location and team details",
+      "expected_entities": {
+        "organizations": [
+          {
+            "name_contains": "github"
+          }
+        ],
+        "locations": [
+          {
+            "city_contains": "san francisco"
+          }
+        ],
+        "minimum_entities_count": 1
+      },
+      "timeout_seconds": 30
+    }
+  ]
+}

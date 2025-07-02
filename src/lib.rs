@@ -7,5 +7,6 @@ pub mod entities;
 pub mod generate_ts;
 pub mod llm;
 pub mod sitemap;
+pub mod test_runner;
 pub mod typescript_schema;
 pub mod url_ranking;

@@ -25,9 +25,17 @@ pub struct CleanHtmlConfig {
 }
 
 #[derive(Debug, Clone)]
+pub struct TestConfig {
+    pub test_file: String,
+    pub create_issues: bool,
+    pub verbose: bool,
+}
+
+#[derive(Debug, Clone)]
 pub enum AppMode {
     Crawl(CrawlerConfig),
     CleanHtml(CleanHtmlConfig),
+    Test(TestConfig),
 }
 
 /// Check if a string is a valid URL (starts with http:// or https://)
@@ -86,7 +94,7 @@ impl CrawlerConfig {
                     .long("objective")
                     .value_name("OBJECTIVE")
                     .help("The crawling objective - what information to look for")
-                    .required_unless_present("clean-html")
+                    .required_unless_present_any(["clean-html", "test"])
             )
             .arg(
                 Arg::new("domains")
@@ -94,7 +102,7 @@ impl CrawlerConfig {
                     .long("domains")
                     .value_name("DOMAINS")
                     .help("Comma-separated list of domains to crawl")
-                    .required_unless_present_any(["clean-html", "links"])
+                    .required_unless_present_any(["clean-html", "links", "test"])
             )
             .arg(
                 Arg::new("links")
@@ -133,6 +141,18 @@ impl CrawlerConfig {
                     .help("Clean HTML by removing unwanted elements and attributes. Usage: --clean-html <input.html|url> <output.html>. Supports local files or URLs (http/https).")
             )
             .arg(
+                Arg::new("test")
+                    .long("test")
+                    .value_name("TEST_FILE")
+                    .help("Run automated tests from a JSON test file. Usage: --test <test_file.json>")
+            )
+            .arg(
+                Arg::new("create-issues")
+                    .long("create-issues")
+                    .help("Create GitHub issues for failed tests (requires gh CLI)")
+                    .action(clap::ArgAction::SetTrue)
+            )
+            .arg(
                 Arg::new("verbose")
                     .short('v')
                     .long("verbose")
@@ -155,6 +175,16 @@ impl CrawlerConfig {
             .get_matches();
 
         let verbose = matches.get_flag("verbose");
+
+        // Check if test mode is requested
+        if let Some(test_file) = matches.get_one::<String>("test") {
+            let create_issues = matches.get_flag("create-issues");
+            return AppMode::Test(TestConfig {
+                test_file: test_file.clone(),
+                create_issues,
+                verbose,
+            });
+        }
 
         // Check if clean-html mode is requested
         if let Some(clean_html_args) = matches.get_many::<String>("clean-html") {
