@@ -96,12 +96,12 @@ impl TestRunner {
         path: P,
     ) -> Result<TestCase, Box<dyn std::error::Error>> {
         let content = fs::read_to_string(&path).await?;
-        
+
         // First try to parse as a single TestCase
         if let Ok(test_case) = serde_json::from_str::<TestCase>(&content) {
             return Ok(test_case);
         }
-        
+
         // Fallback: try to parse as TestSuite and take the first test
         if let Ok(test_suite) = serde_json::from_str::<TestSuite>(&content) {
             if let Some(first_test) = test_suite.tests.into_iter().next() {
@@ -110,7 +110,7 @@ impl TestRunner {
                 return Err("TestSuite contains no tests".into());
             }
         }
-        
+
         Err("Invalid JSON format: must be either a single TestCase or TestSuite".into())
     }
 
@@ -406,7 +406,7 @@ impl TestRunner {
     /// Generate a test report for a single test result and optionally create GitHub issues for failed tests
     pub async fn generate_report(&self, result: TestResult, create_issues: bool) -> String {
         let mut report = format!("# Test Report\n\n");
-        
+
         report.push_str(&format!("## Test: {}\n", result.test_name));
         report.push_str(&format!(
             "**Status:** {}\n",
@@ -530,14 +530,7 @@ impl TestRunner {
         // Use gh CLI to create the issue
         let output = Command::new("gh")
             .args(&[
-                "issue",
-                "create",
-                "--title",
-                &title,
-                "--body",
-                &body,
-                "--label",
-                "bug,test-failure",
+                "issue", "create", "--title", &title, "--body", &body, "--label", "bug",
             ])
             .output()?;
 
