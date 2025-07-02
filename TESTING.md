@@ -10,36 +10,34 @@ SmartCrawler includes an automated testing system that allows you to:
 - Validate that the crawler finds the expected entities
 - Automatically create GitHub issues when tests fail with detected problems
 
+**Each test file contains a single test case**, making them simple to create, manage, and track.
+
 ## Test File Format
 
-Tests are defined in JSON files with the following structure:
+Each test is defined in its own JSON file with the following structure:
 
 ```json
 {
-  "tests": [
-    {
-      "name": "Test Name",
-      "description": "Description of what this test validates",
-      "url": "https://example.com/page-to-test",
-      "objective": "Find contact information for team members",
-      "expected_entities": {
-        "persons": [
-          {
-            "name_contains": "john",
-            "title_contains": "ceo"
-          }
-        ],
-        "locations": [
-          {
-            "city_contains": "san francisco",
-            "country_contains": "usa"
-          }
-        ],
-        "minimum_entities_count": 2
-      },
-      "timeout_seconds": 30
-    }
-  ]
+  "name": "Test Name",
+  "description": "Description of what this test validates",
+  "url": "https://example.com/page-to-test",
+  "objective": "Find contact information for team members",
+  "expected_entities": {
+    "persons": [
+      {
+        "name_contains": "john",
+        "title_contains": "ceo"
+      }
+    ],
+    "locations": [
+      {
+        "city_contains": "san francisco",
+        "country_contains": "usa"
+      }
+    ],
+    "minimum_entities_count": 2
+  },
+  "timeout_seconds": 30
 }
 ```
 
@@ -117,71 +115,71 @@ The `expected_entities` object can contain:
 ### Basic Test Execution
 
 ```bash
-# Run tests from a JSON file
-cargo run -- --test tests/my-tests.json
+# Run a single test from a JSON file
+cargo run -- --test tests/my-test.json
 
-# Run tests with verbose logging
-cargo run -- --test tests/my-tests.json --verbose
+# Run test with verbose logging
+cargo run -- --test tests/my-test.json --verbose
 ```
 
 ### Create GitHub Issues for Failed Tests
 
 ```bash
 # Automatically create GitHub issues for failed tests
-cargo run -- --test tests/my-tests.json --create-issues
+cargo run -- --test tests/my-test.json --create-issues
 ```
 
 This requires the `gh` CLI tool to be installed and authenticated.
 
-## Example Test File
+## Example Test Files
 
-Here's a complete example test file (`example-test.json`):
+Here are complete example test files:
 
+### `anthropic-team-test.json`
 ```json
 {
-  "tests": [
-    {
-      "name": "Anthropic About Page Team Test",
-      "description": "Test that we can extract team member information from Anthropic's about page",
-      "url": "https://www.anthropic.com/company",
-      "objective": "Find information about company leadership and team members",
-      "expected_entities": {
-        "persons": [
-          {
-            "name_contains": "dario",
-            "title_contains": "ceo"
-          }
-        ],
-        "organizations": [
-          {
-            "name_contains": "anthropic"
-          }
-        ],
-        "minimum_entities_count": 1
-      },
-      "timeout_seconds": 45
-    },
-    {
-      "name": "University Contact Page Test", 
-      "description": "Test extraction of contact information from a university page",
-      "url": "https://www.stanford.edu/about/",
-      "objective": "Find contact information and location details",
-      "expected_entities": {
-        "locations": [
-          {
-            "city_contains": "stanford",
-            "state_contains": "california"
-          }
-        ],
-        "organizations": [
-          {
-            "name_contains": "stanford"
-          }
-        ],
-        "minimum_entities_count": 2
+  "name": "Anthropic About Page Team Test",
+  "description": "Test that we can extract team member information from Anthropic's about page",
+  "url": "https://www.anthropic.com/company",
+  "objective": "Find information about company leadership and team members",
+  "expected_entities": {
+    "persons": [
+      {
+        "name_contains": "dario"
       }
-    }
-  ]
+    ],
+    "organizations": [
+      {
+        "name_contains": "anthropic"
+      }
+    ],
+    "minimum_entities_count": 1
+  },
+  "timeout_seconds": 45
+}
+```
+
+### `stanford-contact-test.json`
+```json
+{
+  "name": "University Contact Page Test",
+  "description": "Test extraction of contact information from a university page",
+  "url": "https://www.stanford.edu/about/",
+  "objective": "Find contact information and location details",
+  "expected_entities": {
+    "locations": [
+      {
+        "city_contains": "stanford",
+        "state_contains": "california"
+      }
+    ],
+    "organizations": [
+      {
+        "name_contains": "stanford"
+      }
+    ],
+    "minimum_entities_count": 2
+  }
 }
 ```
 
@@ -228,6 +226,8 @@ When `--create-issues` is enabled, failed tests automatically create GitHub issu
 6. **Real Websites**: Test against real websites that contain the types of data your crawler needs to handle
 
 7. **Edge Cases**: Include tests for edge cases like pages with minimal content, complex layouts, or unusual data structures
+
+8. **File Organization**: Use descriptive file names like `site-feature-test.json` for easy identification and management
 
 ## Troubleshooting
 

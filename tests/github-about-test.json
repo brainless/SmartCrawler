@@ -1,0 +1,20 @@
+{
+  "name": "GitHub About Page Test",
+  "description": "Test extraction of company information from GitHub's about page",
+  "url": "https://github.com/about",
+  "objective": "Find company information, location and team details",
+  "expected_entities": {
+    "organizations": [
+      {
+        "name_contains": "github"
+      }
+    ],
+    "locations": [
+      {
+        "city_contains": "san francisco"
+      }
+    ],
+    "minimum_entities_count": 1
+  },
+  "timeout_seconds": 30
+}

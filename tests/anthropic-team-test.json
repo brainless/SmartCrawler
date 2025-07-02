@@ -1,0 +1,20 @@
+{
+  "name": "Anthropic About Page Team Test",
+  "description": "Test that we can extract team member information from Anthropic's about page",
+  "url": "https://www.anthropic.com/company",
+  "objective": "Find information about company leadership and team members",
+  "expected_entities": {
+    "persons": [
+      {
+        "name_contains": "dario"
+      }
+    ],
+    "organizations": [
+      {
+        "name_contains": "anthropic"
+      }
+    ],
+    "minimum_entities_count": 1
+  },
+  "timeout_seconds": 45
+}

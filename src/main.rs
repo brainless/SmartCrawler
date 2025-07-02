@@ -202,23 +202,19 @@ async fn handle_test_mode(config: TestConfig) {
         .install_default()
         .expect("Failed to install rustls crypto provider");
 
-    // Load test suite
-    let test_suite = match TestRunner::load_test_suite(&config.test_file).await {
-        Ok(suite) => suite,
+    // Load test case
+    let test_case = match TestRunner::load_test_case(&config.test_file).await {
+        Ok(test) => test,
         Err(e) => {
             error!(
-                "Failed to load test suite from '{}': {}",
+                "Failed to load test from '{}': {}",
                 config.test_file, e
             );
             std::process::exit(1);
         }
     };
 
-    info!(
-        "Loaded {} test(s) from {}",
-        test_suite.tests.len(),
-        config.test_file
-    );
+    info!("Loaded test '{}' from {}", test_case.name, config.test_file);
 
     // Create Claude client
     let claude_client = match ClaudeClient::new() {
@@ -229,22 +225,21 @@ async fn handle_test_mode(config: TestConfig) {
         }
     };
 
-    // Create test runner and run tests
+    // Create test runner and run test
     let test_runner = TestRunner::new(claude_client);
-    let results = test_runner.run_test_suite(test_suite).await;
+    let result = test_runner.run_test(test_case).await;
 
     // Generate and display report
     let report = test_runner
-        .generate_report(results.clone(), config.create_issues)
+        .generate_report(result.clone(), config.create_issues)
         .await;
     println!("\n{}", report);
 
-    // Exit with failure code if any tests failed
-    let failed_tests = results.iter().filter(|r| !r.passed).count();
-    if failed_tests > 0 {
-        error!("{} test(s) failed", failed_tests);
+    // Exit with failure code if test failed
+    if !result.passed {
+        error!("Test '{}' failed", result.test_name);
         std::process::exit(1);
     } else {
-        info!("All tests passed!");
+        info!("Test '{}' passed!", result.test_name);
     }
 }

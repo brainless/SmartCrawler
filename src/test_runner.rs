@@ -75,6 +75,8 @@ pub struct TestResult {
     pub analysis_summary: String,
 }
 
+// TestSuite is now just a wrapper around a single TestCase for backward compatibility
+// But we'll primarily work with single TestCase files
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TestSuite {
     pub tests: Vec<TestCase>,
@@ -89,26 +91,33 @@ impl TestRunner {
         Self { client }
     }
 
-    /// Load test cases from a JSON file
-    pub async fn load_test_suite<P: AsRef<Path>>(
+    /// Load test case from a JSON file (single test or test suite format)
+    pub async fn load_test_case<P: AsRef<Path>>(
         path: P,
-    ) -> Result<TestSuite, Box<dyn std::error::Error>> {
-        let content = fs::read_to_string(path).await?;
-        let test_suite: TestSuite = serde_json::from_str(&content)?;
-        Ok(test_suite)
+    ) -> Result<TestCase, Box<dyn std::error::Error>> {
+        let content = fs::read_to_string(&path).await?;
+        
+        // First try to parse as a single TestCase
+        if let Ok(test_case) = serde_json::from_str::<TestCase>(&content) {
+            return Ok(test_case);
+        }
+        
+        // Fallback: try to parse as TestSuite and take the first test
+        if let Ok(test_suite) = serde_json::from_str::<TestSuite>(&content) {
+            if let Some(first_test) = test_suite.tests.into_iter().next() {
+                return Ok(first_test);
+            } else {
+                return Err("TestSuite contains no tests".into());
+            }
+        }
+        
+        Err("Invalid JSON format: must be either a single TestCase or TestSuite".into())
     }
 
-    /// Run all tests in the test suite
-    pub async fn run_test_suite(&self, test_suite: TestSuite) -> Vec<TestResult> {
-        let mut results = Vec::new();
-
-        for test_case in test_suite.tests {
-            info!("Running test: {}", test_case.name);
-            let result = self.run_single_test(test_case).await;
-            results.push(result);
-        }
-
-        results
+    /// Run a single test case
+    pub async fn run_test(&self, test_case: TestCase) -> TestResult {
+        info!("Running test: {}", test_case.name);
+        self.run_single_test(test_case).await
     }
 
     /// Run a single test case
@@ -394,71 +403,60 @@ impl TestRunner {
         count
     }
 
-    /// Generate a test report and optionally create GitHub issues for failed tests
-    pub async fn generate_report(&self, results: Vec<TestResult>, create_issues: bool) -> String {
-        let total_tests = results.len();
-        let passed_tests = results.iter().filter(|r| r.passed).count();
-        let failed_tests = total_tests - passed_tests;
-
+    /// Generate a test report for a single test result and optionally create GitHub issues for failed tests
+    pub async fn generate_report(&self, result: TestResult, create_issues: bool) -> String {
         let mut report = format!("# Test Report\n\n");
-        report.push_str(&format!("**Total Tests:** {}\n", total_tests));
-        report.push_str(&format!("**Passed:** {}\n", passed_tests));
-        report.push_str(&format!("**Failed:** {}\n\n", failed_tests));
-
-        for result in &results {
-            report.push_str(&format!("## Test: {}\n", result.test_name));
-            report.push_str(&format!(
-                "**Status:** {}\n",
-                if result.passed {
-                    "✅ PASSED"
-                } else {
-                    "❌ FAILED"
-                }
-            ));
-            report.push_str(&format!(
-                "**Execution Time:** {}ms\n",
-                result.execution_time_ms
-            ));
-            report.push_str(&format!(
-                "**Entities Found:** {}\n",
-                result.extracted_entities_count
-            ));
-            report.push_str(&format!(
-                "**Expected Entities:** {}\n",
-                result.expected_entities_count
-            ));
-
-            if !result.errors.is_empty() {
-                report.push_str("\n**Errors:**\n");
-                for error in &result.errors {
-                    report.push_str(&format!("- {}\n", error));
-                }
+        
+        report.push_str(&format!("## Test: {}\n", result.test_name));
+        report.push_str(&format!(
+            "**Status:** {}\n",
+            if result.passed {
+                "✅ PASSED"
+            } else {
+                "❌ FAILED"
             }
+        ));
+        report.push_str(&format!(
+            "**Execution Time:** {}ms\n",
+            result.execution_time_ms
+        ));
+        report.push_str(&format!(
+            "**Entities Found:** {}\n",
+            result.extracted_entities_count
+        ));
+        report.push_str(&format!(
+            "**Expected Entities:** {}\n",
+            result.expected_entities_count
+        ));
 
-            if !result.warnings.is_empty() {
-                report.push_str("\n**Warnings:**\n");
-                for warning in &result.warnings {
-                    report.push_str(&format!("- {}\n", warning));
-                }
+        if !result.errors.is_empty() {
+            report.push_str("\n**Errors:**\n");
+            for error in &result.errors {
+                report.push_str(&format!("- {}\n", error));
             }
+        }
 
-            if !result.analysis_summary.is_empty() {
-                report.push_str(&format!(
-                    "\n**Analysis Summary:**\n{}\n",
-                    result.analysis_summary
-                ));
+        if !result.warnings.is_empty() {
+            report.push_str("\n**Warnings:**\n");
+            for warning in &result.warnings {
+                report.push_str(&format!("- {}\n", warning));
             }
+        }
 
-            report.push_str("\n---\n\n");
+        if !result.analysis_summary.is_empty() {
+            report.push_str(&format!(
+                "\n**Analysis Summary:**\n{}\n",
+                result.analysis_summary
+            ));
+        }
 
-            // Create GitHub issue for failed tests
-            if !result.passed && create_issues {
-                if let Err(e) = self.create_github_issue_for_failed_test(result).await {
-                    error!(
-                        "Failed to create GitHub issue for test '{}': {}",
-                        result.test_name, e
-                    );
-                }
+        // Create GitHub issue for failed tests
+        if !result.passed && create_issues {
+            if let Err(e) = self.create_github_issue_for_failed_test(&result).await {
+                error!(
+                    "Failed to create GitHub issue for test '{}': {}",
+                    result.test_name, e
+                );
             }
         }
 
