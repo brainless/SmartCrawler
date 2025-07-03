@@ -1,5 +1,4 @@
 use regex::Regex;
-use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -19,299 +18,6 @@ pub struct ScrapedWebPage {
     pub links: Vec<String>,
     pub meta_description: Option<String>,
     pub headings: Vec<String>,
-}
-
-// Static versions for testing
-fn clean_text(text: &str) -> String {
-    text.split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .trim()
-        .to_string()
-}
-
-fn extract_main_content(document: &Html) -> String {
-    // Try to find main content using common selectors
-    let main_selectors = [
-        "main",
-        "article",
-        "[role='main']",
-        ".main-content",
-        ".content",
-        "#main",
-        "#content",
-        ".post-content",
-        ".entry-content",
-        ".article-content",
-    ];
-
-    for selector_str in &main_selectors {
-        if let Ok(selector) = Selector::parse(selector_str) {
-            if let Some(element) = document.select(&selector).next() {
-                let text = element.text().collect::<Vec<_>>().join(" ");
-                let cleaned_text = clean_text(&text);
-                if !cleaned_text.trim().is_empty() && cleaned_text.len() > 50 {
-                    return cleaned_text;
-                }
-            }
-        }
-    }
-
-    // Fallback to body content
-    extract_body_content(document)
-}
-
-fn extract_body_content(document: &Html) -> String {
-    if let Ok(body_selector) = Selector::parse("body") {
-        if let Some(body) = document.select(&body_selector).next() {
-            // Since HTML is already cleaned, we can simply extract all text content
-            let text = body.text().collect::<Vec<_>>().join(" ");
-            return clean_text(&text);
-        }
-    }
-
-    String::new()
-}
-
-fn extract_long_form_content(document: &Html) -> String {
-    // Look for article-like content
-    let article_selectors = [
-        "article",
-        ".article",
-        ".post",
-        ".blog-post",
-        ".content",
-        ".entry",
-        ".story",
-        "[role='article']",
-    ];
-
-    for selector_str in &article_selectors {
-        if let Ok(selector) = Selector::parse(selector_str) {
-            if let Some(element) = document.select(&selector).next() {
-                let text = element.text().collect::<Vec<_>>().join(" ");
-                let cleaned_text = clean_text(&text);
-                if cleaned_text.len() > 200 {
-                    // Consider it long-form if substantial content
-                    return cleaned_text;
-                }
-            }
-        }
-    }
-
-    String::new()
-}
-
-fn extract_item_list(document: &Html) -> Vec<Item> {
-    let mut items = Vec::new();
-
-    // Look for common list patterns
-    let list_selectors = [
-        ".product-item",
-        ".item",
-        ".result",
-        ".listing",
-        ".card",
-        ".news-item",
-        ".article-item",
-        ".post-item",
-        ".search-result",
-        "article",
-        ".entry",
-        "li",
-        ".tile",
-        ".grid-item",
-    ];
-
-    for selector_str in &list_selectors {
-        if let Ok(selector) = Selector::parse(selector_str) {
-            let elements: Vec<_> = document.select(&selector).collect();
-
-            // Only consider it a list if there are multiple similar items
-            if elements.len() >= 2 {
-                for element in elements {
-                    let title = extract_item_title(&element);
-                    if !title.is_empty() {
-                        let description = extract_item_description(&element);
-                        let url = extract_item_url(&element);
-                        let metadata = extract_item_metadata(&element);
-
-                        items.push(Item {
-                            title,
-                            description,
-                            url,
-                            metadata,
-                        });
-                    }
-                }
-
-                // Return early if we found a good set of items
-                if !items.is_empty() {
-                    break;
-                }
-            }
-        }
-    }
-
-    items
-}
-
-fn extract_tabular_data(document: &Html) -> Vec<HashMap<String, String>> {
-    let mut tables = Vec::new();
-
-    if let Ok(table_selector) = Selector::parse("table") {
-        for table in document.select(&table_selector) {
-            let mut table_data = Vec::new();
-            let mut headers = Vec::new();
-
-            // Extract headers
-            if let Ok(th_selector) = Selector::parse("th") {
-                headers = table
-                    .select(&th_selector)
-                    .map(|th| th.text().collect::<Vec<_>>().join(" ").trim().to_string())
-                    .filter(|h| !h.is_empty())
-                    .collect();
-            }
-
-            // If no headers found, use first row as headers
-            if headers.is_empty() {
-                if let Ok(first_row_selector) = Selector::parse("tr:first-child td") {
-                    headers = table
-                        .select(&first_row_selector)
-                        .map(|td| td.text().collect::<Vec<_>>().join(" ").trim().to_string())
-                        .filter(|h| !h.is_empty())
-                        .collect();
-                }
-            }
-
-            // Extract rows
-            if let Ok(row_selector) = Selector::parse("tr") {
-                let rows: Vec<_> = table.select(&row_selector).collect();
-                let start_idx = if headers.is_empty() { 0 } else { 1 };
-
-                for row in rows.iter().skip(start_idx) {
-                    if let Ok(cell_selector) = Selector::parse("td") {
-                        let cells: Vec<String> = row
-                            .select(&cell_selector)
-                            .map(|td| td.text().collect::<Vec<_>>().join(" ").trim().to_string())
-                            .collect();
-
-                        if !cells.is_empty() {
-                            let mut row_map = HashMap::new();
-                            for (i, cell) in cells.iter().enumerate() {
-                                let key = if i < headers.len() {
-                                    headers[i].clone()
-                                } else {
-                                    format!("column_{}", i + 1)
-                                };
-                                row_map.insert(key, cell.clone());
-                            }
-                            table_data.push(row_map);
-                        }
-                    }
-                }
-            }
-
-            if !table_data.is_empty() {
-                tables.extend(table_data);
-            }
-        }
-    }
-
-    tables
-}
-
-fn extract_item_title(element: &scraper::ElementRef) -> String {
-    let title_selectors = ["h1", "h2", "h3", "h4", ".title", ".name", ".heading", "a"];
-
-    for selector_str in &title_selectors {
-        if let Ok(selector) = Selector::parse(selector_str) {
-            if let Some(title_element) = element.select(&selector).next() {
-                let title = title_element
-                    .text()
-                    .collect::<Vec<_>>()
-                    .join(" ")
-                    .trim()
-                    .to_string();
-                if !title.is_empty() {
-                    return title;
-                }
-            }
-        }
-    }
-
-    // Fallback to element's own text if no specific title found
-    let text = element.text().collect::<Vec<_>>().join(" ");
-    clean_text(&text)
-        .chars()
-        .take(100)
-        .collect::<String>()
-        .trim()
-        .to_string()
-}
-
-fn extract_item_description(element: &scraper::ElementRef) -> Option<String> {
-    let desc_selectors = [".description", ".summary", ".excerpt", "p", ".text"];
-
-    for selector_str in &desc_selectors {
-        if let Ok(selector) = Selector::parse(selector_str) {
-            if let Some(desc_element) = element.select(&selector).next() {
-                let desc = desc_element
-                    .text()
-                    .collect::<Vec<_>>()
-                    .join(" ")
-                    .trim()
-                    .to_string();
-                if !desc.is_empty() && desc.len() > 10 {
-                    return Some(desc);
-                }
-            }
-        }
-    }
-
-    None
-}
-
-fn extract_item_url(element: &scraper::ElementRef) -> Option<String> {
-    if let Ok(link_selector) = Selector::parse("a[href]") {
-        if let Some(link) = element.select(&link_selector).next() {
-            return link.value().attr("href").map(|href| href.to_string());
-        }
-    }
-
-    None
-}
-
-fn extract_item_metadata(element: &scraper::ElementRef) -> HashMap<String, String> {
-    let mut metadata = HashMap::new();
-
-    // Extract common metadata attributes
-    let meta_selectors = [
-        (".price", "price"),
-        (".date", "date"),
-        (".author", "author"),
-        (".category", "category"),
-        (".tags", "tags"),
-        (".rating", "rating"),
-    ];
-
-    for (selector_str, key) in &meta_selectors {
-        if let Ok(selector) = Selector::parse(selector_str) {
-            if let Some(element) = element.select(&selector).next() {
-                let value = element
-                    .text()
-                    .collect::<Vec<_>>()
-                    .join(" ")
-                    .trim()
-                    .to_string();
-                if !value.is_empty() {
-                    metadata.insert(key.to_string(), value);
-                }
-            }
-        }
-    }
-
-    metadata
 }
 
 /// Check if a filename looks like a slug (readable text with hyphens/underscores)
@@ -772,7 +478,7 @@ pub fn clean_html_file(
 /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ///     // Clean an HTML file
 ///     clean_html_source("input.html", "output.html").await?;
-///     
+///
 ///     // Clean HTML from a URL
 ///     clean_html_source("https://example.com", "output.html").await?;
 ///     Ok(())
@@ -805,249 +511,6 @@ pub async fn clean_html_source(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[tokio::test]
-    async fn test_extract_structured_data_long_form() {
-        let html = r#"
-            <html>
-                <body>
-                    <article>
-                        <h1>Article Title</h1>
-                        <p>This is a long-form article with substantial content. It contains multiple paragraphs and detailed information about a specific topic. The content is rich and informative, providing readers with comprehensive coverage of the subject matter.</p>
-                        <p>This second paragraph continues the detailed discussion, adding more depth and analysis to the topic at hand.</p>
-                    </article>
-                </body>
-            </html>
-        "#;
-
-        let document = Html::parse_document(html);
-        let long_form_content = extract_long_form_content(&document);
-        assert!(!long_form_content.is_empty());
-        assert!(long_form_content.contains("Article Title"));
-        assert!(long_form_content.contains("long-form article"));
-    }
-
-    #[tokio::test]
-    async fn test_extract_item_list() {
-        let html = r#"
-            <html>
-                <body>
-                    <div class="product-item">
-                        <h3>Product 1</h3>
-                        <p class="description">Description of product 1</p>
-                        <a href="/product1">View Details</a>
-                        <span class="price">$19.99</span>
-                    </div>
-                    <div class="product-item">
-                        <h3>Product 2</h3>
-                        <p class="description">Description of product 2</p>
-                        <a href="/product2">View Details</a>
-                        <span class="price">$29.99</span>
-                    </div>
-                    <div class="product-item">
-                        <h3>Product 3</h3>
-                        <p class="description">Description of product 3</p>
-                        <a href="/product3">View Details</a>
-                        <span class="price">$39.99</span>
-                    </div>
-                </body>
-            </html>
-        "#;
-
-        let document = Html::parse_document(html);
-        let items = extract_item_list(&document);
-        assert_eq!(items.len(), 3);
-
-        assert_eq!(items[0].title, "Product 1");
-        assert_eq!(
-            items[0].description,
-            Some("Description of product 1".to_string())
-        );
-        assert_eq!(items[0].url, Some("/product1".to_string()));
-        assert_eq!(items[0].metadata.get("price"), Some(&"$19.99".to_string()));
-    }
-
-    #[tokio::test]
-    async fn test_extract_tabular_data() {
-        let html = r#"
-            <html>
-                <body>
-                    <table>
-                        <tr>
-                            <th>Name</th>
-                            <th>Age</th>
-                            <th>City</th>
-                        </tr>
-                        <tr>
-                            <td>John</td>
-                            <td>25</td>
-                            <td>New York</td>
-                        </tr>
-                        <tr>
-                            <td>Jane</td>
-                            <td>30</td>
-                            <td>Los Angeles</td>
-                        </tr>
-                    </table>
-                </body>
-            </html>
-        "#;
-
-        let document = Html::parse_document(html);
-        let tables = extract_tabular_data(&document);
-        assert_eq!(tables.len(), 2); // Two data rows
-
-        assert_eq!(tables[0].get("Name"), Some(&"John".to_string()));
-        assert_eq!(tables[0].get("Age"), Some(&"25".to_string()));
-        assert_eq!(tables[0].get("City"), Some(&"New York".to_string()));
-
-        assert_eq!(tables[1].get("Name"), Some(&"Jane".to_string()));
-        assert_eq!(tables[1].get("Age"), Some(&"30".to_string()));
-        assert_eq!(tables[1].get("City"), Some(&"Los Angeles".to_string()));
-    }
-
-    #[tokio::test]
-    async fn test_extract_main_content() {
-        let html = r#"
-            <html>
-                <body>
-                    <nav>Navigation</nav>
-                    <header>Header</header>
-                    <main>
-                        <h1>Main Content Title</h1>
-                        <p>This is the main content of the page with substantial text that should be extracted.</p>
-                    </main>
-                    <footer>Footer</footer>
-                </body>
-            </html>
-        "#;
-
-        let document = Html::parse_document(html);
-        let main_content = extract_main_content(&document);
-        assert!(!main_content.is_empty());
-        assert!(main_content.contains("Main Content Title"));
-        assert!(main_content.contains("main content of the page"));
-        assert!(!main_content.contains("Navigation"));
-        assert!(!main_content.contains("Footer"));
-    }
-
-    #[tokio::test]
-    async fn test_clean_text() {
-        let messy_text = "  This   is   a   messy\n\n\ntext   with   extra   spaces  ";
-        let cleaned = clean_text(messy_text);
-        assert_eq!(cleaned, "This is a messy text with extra spaces");
-    }
-
-    #[tokio::test]
-    async fn test_extract_item_title() {
-        let html = r#"
-            <div class="item">
-                <h2>Item Title</h2>
-                <p>Some description</p>
-            </div>
-        "#;
-
-        let document = Html::parse_document(html);
-        let element = document
-            .select(&Selector::parse(".item").unwrap())
-            .next()
-            .unwrap();
-        let title = extract_item_title(&element);
-        assert_eq!(title, "Item Title");
-    }
-
-    #[tokio::test]
-    async fn test_extract_item_description() {
-        let html = r#"
-            <div class="item">
-                <h2>Item Title</h2>
-                <p class="description">This is a detailed description of the item</p>
-            </div>
-        "#;
-
-        let document = Html::parse_document(html);
-        let element = document
-            .select(&Selector::parse(".item").unwrap())
-            .next()
-            .unwrap();
-
-        let description = extract_item_description(&element);
-        assert_eq!(
-            description,
-            Some("This is a detailed description of the item".to_string())
-        );
-    }
-
-    #[tokio::test]
-    async fn test_extract_item_url() {
-        let html = r#"
-            <div class="item">
-                <h2>Item Title</h2>
-                <a href="/item/123">View Details</a>
-            </div>
-        "#;
-
-        let document = Html::parse_document(html);
-        let element = document
-            .select(&Selector::parse(".item").unwrap())
-            .next()
-            .unwrap();
-
-        let url = extract_item_url(&element);
-        assert_eq!(url, Some("/item/123".to_string()));
-    }
-
-    #[tokio::test]
-    async fn test_extract_item_metadata() {
-        let html = r#"
-            <div class="item">
-                <h2>Item Title</h2>
-                <span class="price">$99.99</span>
-                <span class="date">2023-01-01</span>
-                <span class="author">John Doe</span>
-            </div>
-        "#;
-
-        let document = Html::parse_document(html);
-        let element = document
-            .select(&Selector::parse(".item").unwrap())
-            .next()
-            .unwrap();
-
-        let metadata = extract_item_metadata(&element);
-        assert_eq!(metadata.get("price"), Some(&"$99.99".to_string()));
-        assert_eq!(metadata.get("date"), Some(&"2023-01-01".to_string()));
-        assert_eq!(metadata.get("author"), Some(&"John Doe".to_string()));
-    }
-
-    #[tokio::test]
-    async fn test_table_without_headers() {
-        let html = r#"
-            <html>
-                <body>
-                    <table>
-                        <tr>
-                            <td>Value 1</td>
-                            <td>Value 2</td>
-                        </tr>
-                        <tr>
-                            <td>Value 3</td>
-                            <td>Value 4</td>
-                        </tr>
-                    </table>
-                </body>
-            </html>
-        "#;
-
-        let document = Html::parse_document(html);
-
-        let tables = extract_tabular_data(&document);
-        assert_eq!(tables.len(), 1);
-
-        // Should use first row as headers, so second row becomes data
-        assert_eq!(tables[0].get("Value 1"), Some(&"Value 3".to_string()));
-        assert_eq!(tables[0].get("Value 2"), Some(&"Value 4".to_string()));
-    }
 
     #[tokio::test]
     async fn test_clean_html_removes_unwanted_elements() {
@@ -1501,11 +964,11 @@ mod tests {
             <html>
                 <body>
                     <div>
-                        
+
                     </div>
                     <p>   </p>
                     <span>
-                    
+
                     </span>
                     <h1>Real Title</h1>
                 </body>
@@ -2230,28 +1693,28 @@ mod tests {
                         <h1>Article</h1>
                         <!-- Keep: Image with slug name -->
                         <img src="/hero-banner.jpg" width="800" height="400">
-                        
+
                         <!-- Keep: SVG with aria-label -->
                         <svg aria-label="Chart showing growth" width="400" height="200">
                             <rect width="100" height="150" fill="blue"/>
                         </svg>
-                        
+
                         <!-- Remove: Image without meaningful attributes -->
                         <img src="/photo123.png" alt="">
-                        
+
                         <!-- Remove: Decorative SVG -->
                         <svg width="10" height="10">
                             <circle cx="5" cy="5" r="3"/>
                         </svg>
-                        
+
                         <!-- Keep: Image with meaningful alt -->
                         <img src="/tmp456.jpg" alt="Product demonstration">
-                        
+
                         <!-- Keep: SVG with meaningful class -->
                         <svg class="logo-main" width="150" height="75">
                             <text x="10" y="40">Company</text>
                         </svg>
-                        
+
                         <p>Article content</p>
                     </main>
                 </body>
