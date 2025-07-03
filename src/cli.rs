@@ -15,6 +15,7 @@ pub struct CrawlerConfig {
     pub verbose: bool,
     pub url_ranking_config: UrlRankingConfig,
     pub enable_keyword_filtering: bool,
+    pub extract_mode: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -131,6 +132,12 @@ impl CrawlerConfig {
                     .help("Multiplier for candidate URLs sent to LLM (candidate_count = max_urls * multiplier)")
                     .default_value("3")
             )
+            .arg(
+                Arg::new("extract")
+                    .long("extract")
+                    .help("Enable data extraction mode - extract structured tree data from HTML")
+                    .action(clap::ArgAction::SetTrue)
+            )
             .get_matches();
 
         let verbose = matches.get_flag("verbose");
@@ -215,6 +222,8 @@ impl CrawlerConfig {
             ..UrlRankingConfig::default()
         };
 
+        let extract_mode = matches.get_flag("extract");
+
         AppMode::Crawl(CrawlerConfig {
             objective,
             domains: Arc::new(Mutex::new(domains)),
@@ -225,6 +234,7 @@ impl CrawlerConfig {
             verbose,
             url_ranking_config,
             enable_keyword_filtering,
+            extract_mode,
         })
     }
 }

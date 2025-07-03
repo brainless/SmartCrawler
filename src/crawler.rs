@@ -239,7 +239,10 @@ impl SmartCrawler {
 
         // Analyze starting URLs
         for start_url in &starting_urls {
-            match browser.scrape_url(start_url).await {
+            match browser
+                .scrape_url_with_extraction(start_url, self.config.extract_mode)
+                .await
+            {
                 Ok(web_page) => {
                     tracing::info!("Successfully scraped starting URL: {}", web_page.url);
 
@@ -486,7 +489,10 @@ impl SmartCrawler {
                 }
             }
 
-            match browser.scrape_url(url).await {
+            match browser
+                .scrape_url_with_extraction(url, self.config.extract_mode)
+                .await
+            {
                 Ok(web_page) => {
                     tracing::info!("Analyzing content from: {}", web_page.url);
 
@@ -653,7 +659,10 @@ impl SmartCrawler {
             }
 
             tracing::info!("Scraping URL: {}", url);
-            match browser.scrape_url(url).await {
+            match browser
+                .scrape_url_with_extraction(url, self.config.extract_mode)
+                .await
+            {
                 Ok(web_page) => {
                     tracing::info!("Successfully scraped: {}", web_page.url);
 
