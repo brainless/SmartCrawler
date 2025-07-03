@@ -1,4 +1,4 @@
-use crate::content::{extract_structured_data, ScrapedWebPage};
+use crate::content::ScrapedWebPage;
 use fantoccini::{Client, ClientBuilder};
 use rand::Rng;
 use scraper::{Html, Selector};
@@ -63,7 +63,7 @@ impl Browser {
             .collect::<Vec<_>>()
             .join(" ");
 
-        let content = extract_structured_data(&html).await;
+        let content = String::new(); // Placeholder - replaced StructuredContent with blank String
 
         let links = scraper
             .select(&Selector::parse("a[href]").unwrap())
