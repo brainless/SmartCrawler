@@ -4,6 +4,73 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct HtmlTreeNode {
+    pub tag: String,
+    pub id: Option<String>,
+    pub classes: Vec<String>,
+    pub text_content: Option<String>,
+    pub children: Vec<HtmlTreeNode>,
+}
+
+impl HtmlTreeNode {
+    pub fn new(tag: String) -> Self {
+        Self {
+            tag,
+            id: None,
+            classes: Vec::new(),
+            text_content: None,
+            children: Vec::new(),
+        }
+    }
+
+    pub fn display_tree(&self, depth: usize) -> String {
+        let mut result = String::new();
+
+        // Create indentation with ASCII tree characters
+        if depth > 0 {
+            for i in 0..depth {
+                if i == depth - 1 {
+                    result.push_str("├── ");
+                } else {
+                    result.push_str("│   ");
+                }
+            }
+        }
+
+        // Add tag name
+        result.push_str(&self.tag);
+
+        // Add ID if present
+        if let Some(id) = &self.id {
+            result.push_str(&format!(" id=\"{id}\""));
+        }
+
+        // Add classes if present
+        if !self.classes.is_empty() {
+            let classes = self.classes.join(" ");
+            result.push_str(&format!(" class=\"{classes}\""));
+        }
+
+        // Add text content if present
+        if let Some(text) = &self.text_content {
+            if !text.trim().is_empty() {
+                let trimmed = text.trim();
+                result.push_str(&format!(" [{trimmed}]"));
+            }
+        }
+
+        result.push('\n');
+
+        // Recursively display children
+        for child in &self.children {
+            result.push_str(&child.display_tree(depth + 1));
+        }
+
+        result
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Item {
     pub title: String,
     pub description: Option<String>,
@@ -175,6 +242,7 @@ pub struct ScrapedWebPage {
     pub links: Vec<String>,
     pub meta_description: Option<String>,
     pub headings: Vec<String>,
+    pub alternative_extraction: Option<HtmlTreeNode>,
 }
 
 /// Extracts structured data from HTML pages. The function should:
@@ -228,6 +296,124 @@ pub async fn extract_structured_data(html: &str) -> StructuredContent {
             StructuredContent::LongForm(main_content)
         }
     }
+}
+
+/// Extracts HTML content as a tree structure according to the alternative extraction approach
+pub fn extract_alternative_tree(html: &str) -> Option<HtmlTreeNode> {
+    let document = Html::parse_document(html);
+
+    // Start with the body element or html element if body is not found
+    let body_selector = Selector::parse("body").unwrap();
+    let html_selector = Selector::parse("html").unwrap();
+
+    if let Some(body_element) = document.select(&body_selector).next() {
+        Some(build_tree_from_element(&body_element))
+    } else {
+        document.select(&html_selector).next().map(|html_element| build_tree_from_element(&html_element))
+    }
+}
+
+fn build_tree_from_element(element: &scraper::ElementRef) -> HtmlTreeNode {
+    let tag_name = element.value().name().to_string();
+    let mut node = HtmlTreeNode::new(tag_name);
+
+    // Extract ID attribute
+    if let Some(id) = element.value().attr("id") {
+        let trimmed_id = id.trim();
+        if !trimmed_id.is_empty() {
+            node.id = Some(trimmed_id.to_string());
+        }
+    }
+
+    // Extract and filter class attributes
+    if let Some(class_attr) = element.value().attr("class") {
+        let classes: Vec<String> = class_attr
+            .split_whitespace()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty() && !should_ignore_class(s))
+            .collect();
+        node.classes = classes;
+    }
+
+    // Extract direct text content (not from children)
+    let mut direct_text = String::new();
+    for child in element.children() {
+        if let scraper::node::Node::Text(text) = child.value() {
+            direct_text.push_str(text.trim());
+            direct_text.push(' ');
+        }
+    }
+    let direct_text = direct_text.trim().to_string();
+    if !direct_text.is_empty() && !is_control_characters_only(&direct_text) {
+        node.text_content = Some(direct_text);
+    }
+
+    // Process children
+    let mut paragraph_texts = Vec::new();
+    for child in element.children() {
+        if let scraper::node::Node::Element(child_element) = child.value() {
+            let child_ref = scraper::ElementRef::wrap(child).unwrap();
+
+            // Skip if should ignore this tag
+            if should_ignore_element(&child_ref) {
+                continue;
+            }
+
+            let child_tag = child_element.name();
+
+            // Handle paragraph merging
+            if child_tag == "p" {
+                let p_text = child_ref.text().collect::<String>().trim().to_string();
+                if !p_text.is_empty() && !is_control_characters_only(&p_text) {
+                    paragraph_texts.push(p_text);
+                }
+            } else {
+                // If we have accumulated paragraph texts, create a merged paragraph node
+                if !paragraph_texts.is_empty() {
+                    let merged_text = paragraph_texts.join(" ");
+                    let mut p_node = HtmlTreeNode::new("p".to_string());
+                    p_node.text_content = Some(merged_text);
+                    node.children.push(p_node);
+                    paragraph_texts.clear();
+                }
+
+                // Add the child node
+                let child_node = build_tree_from_element(&child_ref);
+                node.children.push(child_node);
+            }
+        }
+    }
+
+    // Handle any remaining paragraph texts
+    if !paragraph_texts.is_empty() {
+        let merged_text = paragraph_texts.join(" ");
+        let mut p_node = HtmlTreeNode::new("p".to_string());
+        p_node.text_content = Some(merged_text);
+        node.children.push(p_node);
+    }
+
+    node
+}
+
+fn should_ignore_element(element: &scraper::ElementRef) -> bool {
+    let tag_name = element.value().name();
+
+    // Check if tag is empty (has no content and no children)
+    if element.children().count() == 0 && element.text().collect::<String>().trim().is_empty() {
+        return true;
+    }
+
+    // Check if tag is image, video, svg, path, etc.
+    matches!(tag_name, "img" | "video" | "svg" | "path" | "circle" | "rect" | "line" | "polygon" | "polyline"
+        | "ellipse" | "audio" | "source" | "track" | "canvas" | "embed" | "object" | "iframe")
+}
+
+fn should_ignore_class(class_name: &str) -> bool {
+    matches!(class_name, "active" | "highlighted" | "selected")
+}
+
+fn is_control_characters_only(text: &str) -> bool {
+    text.chars().all(|c| c.is_control() || c.is_whitespace())
 }
 
 // Static versions for testing

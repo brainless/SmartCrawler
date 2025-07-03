@@ -25,9 +25,16 @@ pub struct CleanHtmlConfig {
 }
 
 #[derive(Debug, Clone)]
+pub struct ExtractConfig {
+    pub url: String,
+    pub verbose: bool,
+}
+
+#[derive(Debug, Clone)]
 pub enum AppMode {
     Crawl(CrawlerConfig),
     CleanHtml(CleanHtmlConfig),
+    Extract(ExtractConfig),
 }
 
 /// Check if a string is a valid URL (starts with http:// or https://)
@@ -86,7 +93,7 @@ impl CrawlerConfig {
                     .long("objective")
                     .value_name("OBJECTIVE")
                     .help("The crawling objective - what information to look for")
-                    .required_unless_present("clean-html")
+                    .required_unless_present_any(["clean-html", "extract"])
             )
             .arg(
                 Arg::new("domains")
@@ -94,7 +101,7 @@ impl CrawlerConfig {
                     .long("domains")
                     .value_name("DOMAINS")
                     .help("Comma-separated list of domains to crawl")
-                    .required_unless_present_any(["clean-html", "links"])
+                    .required_unless_present_any(["clean-html", "links", "extract"])
             )
             .arg(
                 Arg::new("links")
@@ -133,6 +140,12 @@ impl CrawlerConfig {
                     .help("Clean HTML by removing unwanted elements and attributes. Usage: --clean-html <input.html|url> <output.html>. Supports local files or URLs (http/https).")
             )
             .arg(
+                Arg::new("extract")
+                    .long("extract")
+                    .value_name("URL")
+                    .help("Extract alternative tree structure from a single URL. Usage: --extract <url>")
+            )
+            .arg(
                 Arg::new("verbose")
                     .short('v')
                     .long("verbose")
@@ -155,6 +168,21 @@ impl CrawlerConfig {
             .get_matches();
 
         let verbose = matches.get_flag("verbose");
+
+        // Check if extract mode is requested
+        if let Some(extract_url) = matches.get_one::<String>("extract") {
+            // Validate URL format
+            if !is_url(extract_url) {
+                eprintln!(
+                    "Error: --extract requires a valid URL (starting with http:// or https://)"
+                );
+                std::process::exit(1);
+            }
+            return AppMode::Extract(ExtractConfig {
+                url: extract_url.clone(),
+                verbose,
+            });
+        }
 
         // Check if clean-html mode is requested
         if let Some(clean_html_args) = matches.get_many::<String>("clean-html") {
@@ -292,6 +320,16 @@ impl CleanHtmlConfig {
     /// Check if the input source is a URL
     pub fn is_url_source(&self) -> bool {
         is_url(&self.input_source)
+    }
+}
+
+impl ExtractConfig {
+    pub fn validate(&self) -> Result<(), String> {
+        // Validate URL format
+        match url::Url::parse(&self.url) {
+            Ok(_) => Ok(()),
+            Err(e) => Err(format!("Invalid URL format: {e}")),
+        }
     }
 }
 

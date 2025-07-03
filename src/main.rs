@@ -1,8 +1,9 @@
 use dotenv::dotenv;
 use smart_crawler::{
+    browser::Browser,
     claude::ClaudeClient, // Import ClaudeClient for instantiation
-    cli::{AppMode, CleanHtmlConfig, CrawlerConfig},
-    content::clean_html_source,
+    cli::{AppMode, CleanHtmlConfig, CrawlerConfig, ExtractConfig},
+    content::{clean_html_source, extract_alternative_tree},
     crawler::SmartCrawler,
 };
 use std::sync::Arc; // Import Arc
@@ -17,6 +18,9 @@ async fn main() {
     match app_mode {
         AppMode::CleanHtml(clean_config) => {
             handle_clean_html_mode(clean_config).await;
+        }
+        AppMode::Extract(extract_config) => {
+            handle_extract_mode(extract_config).await;
         }
         AppMode::Crawl(config) => {
             handle_crawl_mode(config).await;
@@ -174,5 +178,67 @@ async fn handle_crawl_mode(config: CrawlerConfig) {
             error!("Crawling failed: {}", e);
             std::process::exit(1);
         }
+    }
+}
+
+async fn handle_extract_mode(config: ExtractConfig) {
+    // Initialize logging
+    if config.verbose {
+        tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::DEBUG)
+            .init();
+    } else {
+        tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::INFO)
+            .init();
+    }
+
+    // Initialize rustls crypto provider (needed for browser operations)
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("Failed to install rustls crypto provider");
+
+    // Validate configuration
+    if let Err(e) = config.validate() {
+        error!("Configuration error: {}", e);
+        std::process::exit(1);
+    }
+
+    info!("Starting alternative HTML extraction");
+    info!("URL: {}", config.url);
+
+    // Create browser instance
+    let browser = match Browser::new().await {
+        Ok(browser) => browser,
+        Err(e) => {
+            error!("Failed to create browser: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    // Fetch HTML content
+    let html = match browser.fetch_html(&config.url).await {
+        Ok(html) => html,
+        Err(e) => {
+            error!("Failed to fetch HTML: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    // Extract alternative tree structure
+    match extract_alternative_tree(&html) {
+        Some(tree) => {
+            println!("🌳 Alternative Tree Structure for: {}", config.url);
+            println!("{}", tree.display_tree(0));
+        }
+        None => {
+            error!("Failed to extract tree structure");
+            std::process::exit(1);
+        }
+    }
+
+    // Close browser
+    if let Err(e) = browser.close().await {
+        error!("Failed to close browser: {}", e);
     }
 }

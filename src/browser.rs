@@ -115,6 +115,7 @@ impl Browser {
             links,
             meta_description: Some(meta_description),
             headings,
+            alternative_extraction: None,
         })
     }
 
