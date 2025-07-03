@@ -196,10 +196,10 @@ impl HtmlExtractor {
     }
 
     pub fn print_tree(&self, node: &ExtractionNode) {
-        self.print_tree_recursive(node, 0, true);
+        Self::print_tree_recursive(node, 0, true);
     }
 
-    fn print_tree_recursive(&self, node: &ExtractionNode, depth: usize, is_last: bool) {
+    fn print_tree_recursive(node: &ExtractionNode, depth: usize, is_last: bool) {
         // Create tree line prefix
         let mut prefix = String::new();
         for i in 0..depth {
@@ -240,7 +240,7 @@ impl HtmlExtractor {
         // Print children
         for (i, child) in node.children.iter().enumerate() {
             let is_last_child = i == node.children.len() - 1;
-            self.print_tree_recursive(child, depth + 1, is_last_child);
+            Self::print_tree_recursive(child, depth + 1, is_last_child);
         }
     }
 }
