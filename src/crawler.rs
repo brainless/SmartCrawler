@@ -546,11 +546,7 @@ impl SmartCrawler {
         // Extract structured entities from the content
         let objective_met = match self
             .llm_client
-            .extract_entities(
-                &self.config.objective,
-                &web_page.url,
-                &web_page.content.to_prompt(),
-            )
+            .extract_entities(&self.config.objective, &web_page.url, &web_page.content)
             .await
         {
             Ok(entity_result) => {
@@ -574,11 +570,7 @@ impl SmartCrawler {
                 // Fallback to simple content analysis
                 match self
                     .llm_client
-                    .analyze_content(
-                        &self.config.objective,
-                        &web_page.url,
-                        &web_page.content.to_prompt(),
-                    )
+                    .analyze_content(&self.config.objective, &web_page.url, &web_page.content)
                     .await
                 {
                     Ok(llm_response) => {
