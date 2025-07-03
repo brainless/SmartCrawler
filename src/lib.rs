@@ -4,6 +4,7 @@ pub mod cli;
 pub mod content;
 pub mod crawler;
 pub mod entities;
+pub mod extractor;
 pub mod generate_ts;
 pub mod llm;
 pub mod sitemap;

@@ -1,4 +1,5 @@
 use crate::content::ScrapedWebPage;
+use crate::extractor::HtmlExtractor;
 use fantoccini::{Client, ClientBuilder};
 use rand::Rng;
 use scraper::{Html, Selector};
@@ -32,6 +33,14 @@ impl Browser {
     }
 
     pub async fn scrape_url(&self, url: &str) -> Result<ScrapedWebPage, BrowserError> {
+        self.scrape_url_with_extraction(url, false).await
+    }
+
+    pub async fn scrape_url_with_extraction(
+        &self,
+        url: &str,
+        extract_mode: bool,
+    ) -> Result<ScrapedWebPage, BrowserError> {
         self.client.goto(url).await?;
 
         // Wait for initial page load
@@ -108,6 +117,13 @@ impl Browser {
             .filter(|heading| !heading.is_empty())
             .collect::<Vec<_>>();
 
+        let extraction_data = if extract_mode {
+            let extractor = HtmlExtractor::new();
+            extractor.extract(&html)
+        } else {
+            None
+        };
+
         Ok(ScrapedWebPage {
             url: url.to_string(),
             title: Some(title),
@@ -115,6 +131,7 @@ impl Browser {
             links,
             meta_description: Some(meta_description),
             headings,
+            extraction_data,
         })
     }
 

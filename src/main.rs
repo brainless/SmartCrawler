@@ -3,6 +3,7 @@ use smart_crawler::{
     claude::ClaudeClient, // Import ClaudeClient for instantiation
     cli::{AppMode, CrawlerConfig},
     crawler::SmartCrawler,
+    extractor::HtmlExtractor,
 };
 use std::sync::Arc; // Import Arc
 use tracing::{error, info};
@@ -57,6 +58,9 @@ async fn handle_crawl_mode(config: CrawlerConfig) {
         .install_default()
         .expect("Failed to install rustls crypto provider");
 
+    // Store extract_mode before moving config
+    let extract_mode = config.extract_mode;
+
     // Create and run crawler
     // Pass Arc<ClaudeClient> to SmartCrawler::new
     let crawler = match SmartCrawler::new(config, Arc::new(claude_client)).await {
@@ -79,36 +83,54 @@ async fn handle_crawl_mode(config: CrawlerConfig) {
             println!("\n{:-^80}", " DOMAIN RESULTS ");
 
             for result in &results.results {
-                println!("\nDomain: {}", result.domain);
-                println!("URLs Selected: {}", result.selected_urls.len());
-                println!("Pages Scraped: {}", result.scraped_content.len());
-                println!(
-                    "Entities Extracted: {}",
-                    result
-                        .extracted_entities
-                        .iter()
-                        .map(|e| e.entity_count())
-                        .sum::<usize>()
-                );
+                if extract_mode {
+                    // In extract mode, print the tree structures
+                    println!("\nDomain: {}", result.domain);
+                    println!("Pages Extracted: {}", result.scraped_content.len());
 
-                println!("Analysis:");
-                for analysis_item in &result.analysis {
-                    println!("- {analysis_item}");
-                }
-
-                if !result.extracted_entities.is_empty() {
-                    println!("\nExtracted Entities:");
-                    for entity_result in &result.extracted_entities {
-                        println!(
-                            "  From {}: {} entities (confidence: {:.1}%)",
-                            entity_result.url,
-                            entity_result.entity_count(),
-                            entity_result.extraction_confidence * 100.0
-                        );
+                    for page in &result.scraped_content {
+                        println!("\n{:=^60}", format!(" {} ", page.url));
+                        if let Some(extraction_data) = &page.extraction_data {
+                            let extractor = HtmlExtractor::new();
+                            extractor.print_tree(extraction_data);
+                        } else {
+                            println!("No extraction data available for this page");
+                        }
+                        println!("{:=^60}", "");
                     }
-                }
+                } else {
+                    // Normal mode output
+                    println!("\nDomain: {}", result.domain);
+                    println!("URLs Selected: {}", result.selected_urls.len());
+                    println!("Pages Scraped: {}", result.scraped_content.len());
+                    println!(
+                        "Entities Extracted: {}",
+                        result
+                            .extracted_entities
+                            .iter()
+                            .map(|e| e.entity_count())
+                            .sum::<usize>()
+                    );
 
-                println!("{:-^50}", "");
+                    println!("Analysis:");
+                    for analysis_item in &result.analysis {
+                        println!("- {analysis_item}");
+                    }
+
+                    if !result.extracted_entities.is_empty() {
+                        println!("\nExtracted Entities:");
+                        for entity_result in &result.extracted_entities {
+                            println!(
+                                "  From {}: {} entities (confidence: {:.1}%)",
+                                entity_result.url,
+                                entity_result.entity_count(),
+                                entity_result.extraction_confidence * 100.0
+                            );
+                        }
+                    }
+
+                    println!("{:-^50}", "");
+                }
             }
 
             // Save results if output file specified
