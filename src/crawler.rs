@@ -240,7 +240,11 @@ impl SmartCrawler {
         // Analyze starting URLs
         for start_url in &starting_urls {
             match browser
-                .scrape_url_with_extraction(start_url, self.config.extract_mode)
+                .scrape_url_with_modes(
+                    start_url,
+                    self.config.extract_mode,
+                    self.config.grouped_mode,
+                )
                 .await
             {
                 Ok(web_page) => {
@@ -490,7 +494,7 @@ impl SmartCrawler {
             }
 
             match browser
-                .scrape_url_with_extraction(url, self.config.extract_mode)
+                .scrape_url_with_modes(url, self.config.extract_mode, self.config.grouped_mode)
                 .await
             {
                 Ok(web_page) => {
@@ -660,7 +664,7 @@ impl SmartCrawler {
 
             tracing::info!("Scraping URL: {}", url);
             match browser
-                .scrape_url_with_extraction(url, self.config.extract_mode)
+                .scrape_url_with_modes(url, self.config.extract_mode, self.config.grouped_mode)
                 .await
             {
                 Ok(web_page) => {

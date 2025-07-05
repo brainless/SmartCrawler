@@ -16,6 +16,7 @@ pub struct CrawlerConfig {
     pub url_ranking_config: UrlRankingConfig,
     pub enable_keyword_filtering: bool,
     pub extract_mode: bool,
+    pub grouped_mode: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -138,6 +139,12 @@ impl CrawlerConfig {
                     .help("Enable data extraction mode - extract structured tree data from HTML")
                     .action(clap::ArgAction::SetTrue)
             )
+            .arg(
+                Arg::new("grouped")
+                    .long("grouped")
+                    .help("Enable grouped data detection mode - find and display repeated data patterns")
+                    .action(clap::ArgAction::SetTrue)
+            )
             .get_matches();
 
         let verbose = matches.get_flag("verbose");
@@ -223,6 +230,7 @@ impl CrawlerConfig {
         };
 
         let extract_mode = matches.get_flag("extract");
+        let grouped_mode = matches.get_flag("grouped");
 
         AppMode::Crawl(CrawlerConfig {
             objective,
@@ -235,6 +243,7 @@ impl CrawlerConfig {
             url_ranking_config,
             enable_keyword_filtering,
             extract_mode,
+            grouped_mode,
         })
     }
 }

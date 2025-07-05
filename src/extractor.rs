@@ -1,6 +1,15 @@
 use crate::content::ExtractionNode;
 use scraper::{ElementRef, Html, Node};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+
+#[derive(Debug, Clone)]
+pub struct GroupedData {
+    pub tag: String,
+    pub classes: Vec<String>,
+    pub depth: usize,
+    pub parent_path: String,
+    pub items: Vec<ExtractionNode>,
+}
 
 pub struct HtmlExtractor {
     ignored_tags: HashSet<String>,
@@ -195,8 +204,176 @@ impl HtmlExtractor {
         merged
     }
 
+    pub fn find_grouped_data(&self, node: &ExtractionNode) -> Vec<GroupedData> {
+        let mut grouped_data = Vec::new();
+        self.find_grouped_data_recursive(node, 0, "", &mut grouped_data);
+
+        // Filter out groups with less than 2 items
+        grouped_data.retain(|group| group.items.len() >= 2);
+
+        // Sort by depth (deeper groups first) and then by number of items (more items first)
+        grouped_data.sort_by(|a, b| {
+            b.depth
+                .cmp(&a.depth)
+                .then_with(|| b.items.len().cmp(&a.items.len()))
+        });
+
+        grouped_data
+    }
+
+    fn find_grouped_data_recursive(
+        &self,
+        node: &ExtractionNode,
+        depth: usize,
+        parent_path: &str,
+        grouped_data: &mut Vec<GroupedData>,
+    ) {
+        // Create current path
+        let current_path = if parent_path.is_empty() {
+            node.tag.clone()
+        } else {
+            format!("{}/{}", parent_path, node.tag)
+        };
+
+        // Group siblings by tag and class combination
+        let mut sibling_groups: HashMap<String, Vec<ExtractionNode>> = HashMap::new();
+
+        for child in &node.children {
+            // Create a key based on tag and classes
+            let key = format!("{}:{}", child.tag, child.classes.join(","));
+            sibling_groups
+                .entry(key)
+                .or_default()
+                .push(child.clone());
+        }
+
+        // Find groups with multiple items
+        for (key, items) in sibling_groups {
+            if items.len() >= 2 {
+                let parts: Vec<&str> = key.split(':').collect();
+                let tag = parts[0].to_string();
+                let classes = if parts.len() > 1 && !parts[1].is_empty() {
+                    parts[1].split(',').map(|s| s.to_string()).collect()
+                } else {
+                    Vec::new()
+                };
+
+                // Check if items have similar structure (similar text content or similar children)
+                if self.are_items_similar(&items) {
+                    grouped_data.push(GroupedData {
+                        tag,
+                        classes,
+                        depth,
+                        parent_path: current_path.clone(),
+                        items,
+                    });
+                }
+            }
+        }
+
+        // Recursively process children
+        for child in &node.children {
+            self.find_grouped_data_recursive(child, depth + 1, &current_path, grouped_data);
+        }
+    }
+
+    fn are_items_similar(&self, items: &[ExtractionNode]) -> bool {
+        if items.len() < 2 {
+            return false;
+        }
+
+        // Check if items have similar structure
+        let first_item = &items[0];
+
+        // Simple similarity check: same number of children or similar text patterns
+        for item in items.iter().skip(1) {
+            // Check if they have similar structure (similar number of children)
+            let children_diff =
+                (item.children.len() as i32 - first_item.children.len() as i32).abs();
+
+            // Allow some variance in children count
+            if children_diff > 2 {
+                continue;
+            }
+
+            // If both have text, check if they're not identical (to avoid header repetition)
+            if let (Some(first_text), Some(item_text)) = (&first_item.text, &item.text) {
+                if first_text == item_text {
+                    return false; // Identical text suggests it's not grouped data
+                }
+            }
+
+            // If we reach here, items seem similar enough
+            return true;
+        }
+
+        true
+    }
+
     pub fn print_tree(&self, node: &ExtractionNode) {
         Self::print_tree_recursive(node, 0, true);
+    }
+
+    pub fn print_grouped_data(&self, grouped_data: &[GroupedData]) {
+        if grouped_data.is_empty() {
+            println!("No grouped data found.");
+            return;
+        }
+
+        println!("Found {} grouped data patterns:", grouped_data.len());
+        println!();
+
+        for (i, group) in grouped_data.iter().enumerate() {
+            println!("Group {} ({} items):", i + 1, group.items.len());
+            println!("  Tag: {}", group.tag);
+            if !group.classes.is_empty() {
+                println!("  Classes: {}", group.classes.join(", "));
+            }
+            println!("  Depth: {}", group.depth);
+            println!("  Parent Path: {}", group.parent_path);
+            println!("  Items:");
+
+            for (j, item) in group.items.iter().enumerate() {
+                print!("    [{}] ", j + 1);
+                if let Some(text) = &item.text {
+                    let truncated = if text.len() > 80 {
+                        format!("{}...", &text[..77])
+                    } else {
+                        text.clone()
+                    };
+                    println!("{truncated}");
+                } else if !item.children.is_empty() {
+                    // Show first child's text if available
+                    if let Some(child_text) = Self::get_first_text_content(item) {
+                        let truncated = if child_text.len() > 80 {
+                            format!("{}...", &child_text[..77])
+                        } else {
+                            child_text
+                        };
+                        println!("{truncated}");
+                    } else {
+                        println!("<{} with {} children>", item.tag, item.children.len());
+                    }
+                } else {
+                    println!("<empty {}>", item.tag);
+                }
+            }
+            println!();
+        }
+    }
+
+    fn get_first_text_content(node: &ExtractionNode) -> Option<String> {
+        if let Some(text) = &node.text {
+            return Some(text.clone());
+        }
+
+        for child in &node.children {
+            if let Some(text) = Self::get_first_text_content(child) {
+                return Some(text);
+            }
+        }
+
+        None
     }
 
     fn print_tree_recursive(node: &ExtractionNode, depth: usize, is_last: bool) {
