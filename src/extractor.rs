@@ -211,6 +211,9 @@ impl HtmlExtractor {
         // Filter out groups with less than 2 items
         grouped_data.retain(|group| group.items.len() >= 2);
 
+        // Deduplicate groups based on their signature
+        grouped_data = self.deduplicate_grouped_data(grouped_data);
+
         // Sort by depth (deeper groups first) and then by number of items (more items first)
         grouped_data.sort_by(|a, b| {
             b.depth
@@ -241,10 +244,7 @@ impl HtmlExtractor {
         for child in &node.children {
             // Create a key based on tag and classes
             let key = format!("{}:{}", child.tag, child.classes.join(","));
-            sibling_groups
-                .entry(key)
-                .or_default()
-                .push(child.clone());
+            sibling_groups.entry(key).or_default().push(child.clone());
         }
 
         // Find groups with multiple items
@@ -308,6 +308,55 @@ impl HtmlExtractor {
         }
 
         true
+    }
+
+    fn deduplicate_grouped_data(&self, grouped_data: Vec<GroupedData>) -> Vec<GroupedData> {
+        let mut seen_signatures = HashSet::new();
+        let mut deduplicated = Vec::new();
+
+        for group in grouped_data {
+            let signature = self.create_group_signature(&group);
+            if seen_signatures.insert(signature) {
+                deduplicated.push(group);
+            }
+        }
+
+        deduplicated
+    }
+
+    fn create_group_signature(&self, group: &GroupedData) -> String {
+        // Create a unique signature based on:
+        // 1. Tag and classes
+        // 2. Depth and parent path
+        // 3. Number of items
+        // 4. Sample of text content from items (to distinguish structurally similar but content-different groups)
+
+        let mut signature = format!(
+            "{}:{}:{}:{}:{}",
+            group.tag,
+            group.classes.join(","),
+            group.depth,
+            group.parent_path,
+            group.items.len()
+        );
+
+        // Add a sample of text content from the first few items to distinguish groups
+        for (i, item) in group.items.iter().take(3).enumerate() {
+            if let Some(text) = &item.text {
+                // Use first 20 characters of text as part of signature
+                let text_sample = if text.len() > 20 { &text[..20] } else { text };
+                signature.push_str(&format!(":item{i}:{text_sample}"));
+            } else if let Some(first_child_text) = Self::get_first_text_content(item) {
+                let text_sample = if first_child_text.len() > 20 {
+                    &first_child_text[..20]
+                } else {
+                    &first_child_text
+                };
+                signature.push_str(&format!(":item{i}:{text_sample}"));
+            }
+        }
+
+        signature
     }
 
     pub fn print_tree(&self, node: &ExtractionNode) {
