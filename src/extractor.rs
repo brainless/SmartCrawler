@@ -267,12 +267,26 @@ impl HtmlExtractor {
 
                 // Check if items have similar structure (similar text content or similar children)
                 if self.are_items_similar(&items) {
+                    // Create the full path including the grouped element itself
+                    // Use the first item to get the complete selector (tag + id + classes)
+                    let grouped_element_selector = if let Some(first_item) = items.first() {
+                        self.create_element_selector(first_item)
+                    } else {
+                        tag.clone()
+                    };
+
+                    let full_element_path = if current_full_path.is_empty() {
+                        grouped_element_selector
+                    } else {
+                        format!("{current_full_path} > {grouped_element_selector}")
+                    };
+
                     grouped_data.push(GroupedData {
                         tag,
                         classes,
                         depth,
                         parent_path: current_path.clone(),
-                        full_path: current_full_path.clone(),
+                        full_path: full_element_path,
                         items,
                     });
                 }
