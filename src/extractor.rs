@@ -8,6 +8,7 @@ pub struct GroupedData {
     pub classes: Vec<String>,
     pub depth: usize,
     pub parent_path: String,
+    pub full_path: String,
     pub items: Vec<ExtractionNode>,
 }
 
@@ -231,11 +232,17 @@ impl HtmlExtractor {
         parent_path: &str,
         grouped_data: &mut Vec<GroupedData>,
     ) {
-        // Create current path
+        // Create current simple path and full CSS selector path
         let current_path = if parent_path.is_empty() {
             node.tag.clone()
         } else {
             format!("{}/{}", parent_path, node.tag)
+        };
+
+        let current_full_path = if parent_path.is_empty() {
+            self.create_element_selector(node)
+        } else {
+            format!("{} > {}", parent_path, self.create_element_selector(node))
         };
 
         // Group siblings by tag and class combination
@@ -265,6 +272,7 @@ impl HtmlExtractor {
                         classes,
                         depth,
                         parent_path: current_path.clone(),
+                        full_path: current_full_path.clone(),
                         items,
                     });
                 }
@@ -273,7 +281,7 @@ impl HtmlExtractor {
 
         // Recursively process children
         for child in &node.children {
-            self.find_grouped_data_recursive(child, depth + 1, &current_path, grouped_data);
+            self.find_grouped_data_recursive(child, depth + 1, &current_full_path, grouped_data);
         }
     }
 
@@ -308,6 +316,24 @@ impl HtmlExtractor {
         }
 
         true
+    }
+
+    fn create_element_selector(&self, node: &ExtractionNode) -> String {
+        let mut selector = node.tag.clone();
+
+        // Add ID if present
+        if let Some(id) = &node.id {
+            selector.push_str(&format!("#{id}"));
+        }
+
+        // Add classes if present
+        if !node.classes.is_empty() {
+            for class in &node.classes {
+                selector.push_str(&format!(".{class}"));
+            }
+        }
+
+        selector
     }
 
     fn deduplicate_grouped_data(&self, grouped_data: Vec<GroupedData>) -> Vec<GroupedData> {
@@ -374,12 +400,7 @@ impl HtmlExtractor {
 
         for (i, group) in grouped_data.iter().enumerate() {
             println!("Group {} ({} items):", i + 1, group.items.len());
-            println!("  Tag: {}", group.tag);
-            if !group.classes.is_empty() {
-                println!("  Classes: {}", group.classes.join(", "));
-            }
-            println!("  Depth: {}", group.depth);
-            println!("  Parent Path: {}", group.parent_path);
+            println!("  Path: {}", group.full_path);
             println!("  Items:");
 
             for (j, item) in group.items.iter().enumerate() {
