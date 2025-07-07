@@ -91,9 +91,9 @@ async fn handle_crawl_mode(config: CrawlerConfig) {
 
                     for page in &result.scraped_content {
                         println!("\n{:=^60}", format!(" {} ", page.url));
-                        if let Some(extraction_data) = &page.extraction_data {
+                        if let Some(page_node_tree) = &page.page_node_tree {
                             let extractor = HtmlExtractor::new();
-                            extractor.print_tree(extraction_data);
+                            extractor.print_tree(page_node_tree);
                         } else {
                             println!("No extraction data available for this page");
                         }
@@ -106,7 +106,7 @@ async fn handle_crawl_mode(config: CrawlerConfig) {
 
                     for page in &result.scraped_content {
                         println!("\n{:=^60}", format!(" {} ", page.url));
-                        if let Some(extraction_data) = &page.extraction_data {
+                        if let Some(extraction_data) = &page.page_node_tree {
                             let extractor = HtmlExtractor::new();
                             let grouped_data = extractor.find_grouped_data(extraction_data);
                             extractor.print_grouped_data(&grouped_data);

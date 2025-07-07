@@ -1,6 +1,6 @@
 use crate::browser::Browser;
 use crate::cli::CrawlerConfig;
-use crate::content::ScrapedWebPage;
+use crate::content::{DomainNodeContainer, ScrapedWebPage};
 use crate::entities::EntityExtractionResult;
 use crate::llm::{LlmError, LLM};
 use crate::sitemap::SitemapParser;
@@ -90,6 +90,7 @@ pub struct SmartCrawler {
     llm_client: Arc<dyn LLM + Send + Sync>, // Changed from claude_client: ClaudeClient
     config: CrawlerConfig,
     urls_scraped: Arc<Mutex<HashMap<String, HashSet<String>>>>, // domain -> set of path+query
+    domain_node_containers: Arc<Mutex<HashMap<String, DomainNodeContainer>>>, // domain -> node container
 }
 
 impl SmartCrawler {
@@ -105,6 +106,7 @@ impl SmartCrawler {
             llm_client, // Use the passed llm_client
             config,
             urls_scraped: Arc::new(Mutex::new(HashMap::new())),
+            domain_node_containers: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 
@@ -187,6 +189,77 @@ impl SmartCrawler {
         })
     }
 
+    /// Process scraped page and add to domain node container
+    async fn process_scraped_page(
+        &self,
+        domain: &str,
+        mut web_page: ScrapedWebPage,
+    ) -> ScrapedWebPage {
+        if let Some(page_tree) = &web_page.page_node_tree {
+            let mut containers = self.domain_node_containers.lock().unwrap();
+            let container = containers
+                .entry(domain.to_string())
+                .or_insert_with(|| DomainNodeContainer::new(domain.to_string()));
+
+            // Add this page's tree to find duplicates
+            container.add_page_tree(web_page.url.clone(), page_tree.clone());
+
+            // Filter duplicates to get unique content
+            web_page.filtered_node_tree = container.filter_duplicates(page_tree);
+        }
+        web_page
+    }
+
+    /// Ensure we have at least 3 pages for duplicate detection
+    async fn ensure_minimum_pages(
+        &self,
+        domain: &str,
+        scraped_content: &[ScrapedWebPage],
+        sitemap_urls: &[String],
+        browser: &Browser,
+    ) -> Result<Vec<ScrapedWebPage>, CrawlerError> {
+        let mut additional_pages = Vec::new();
+        let current_count = scraped_content.len();
+
+        if current_count >= 3 {
+            return Ok(additional_pages);
+        }
+
+        let needed = 3 - current_count;
+        tracing::info!(
+            "Need {} more pages for domain {} to reach minimum of 3",
+            needed,
+            domain
+        );
+
+        // Get URLs we haven't scraped yet
+        let scraped_urls: HashSet<String> = scraped_content.iter().map(|p| p.url.clone()).collect();
+        let available_urls: Vec<&String> = sitemap_urls
+            .iter()
+            .filter(|url| !scraped_urls.contains(*url))
+            .take(needed)
+            .collect();
+
+        for url in available_urls {
+            match browser.scrape_url(url).await {
+                Ok(web_page) => {
+                    tracing::info!(
+                        "Scraped additional page for minimum count: {}",
+                        web_page.url
+                    );
+                    let processed_page = self.process_scraped_page(domain, web_page).await;
+                    additional_pages.push(processed_page);
+                    self.mark_url_as_scraped(domain, url);
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to scrape additional URL {}: {}", url, e);
+                }
+            }
+        }
+
+        Ok(additional_pages)
+    }
+
     async fn crawl_domain(&self, domain: &str) -> Result<CrawlResult, CrawlerError> {
         tracing::info!("Starting crawl for domain: {}", domain);
 
@@ -239,19 +312,15 @@ impl SmartCrawler {
 
         // Analyze starting URLs
         for start_url in &starting_urls {
-            match browser
-                .scrape_url_with_modes(
-                    start_url,
-                    self.config.extract_mode,
-                    self.config.grouped_mode,
-                )
-                .await
-            {
+            match browser.scrape_url(start_url).await {
                 Ok(web_page) => {
                     tracing::info!("Successfully scraped starting URL: {}", web_page.url);
 
+                    // Process page for duplicate detection
+                    let processed_page = self.process_scraped_page(domain, web_page).await;
+
                     // Analyze this page's content
-                    match self.analyze_page_content(&web_page).await {
+                    match self.analyze_page_content(&processed_page).await {
                         Ok((page_analysis, entities, met)) => {
                             analysis.extend(page_analysis);
                             extracted_entities.extend(entities);
@@ -260,12 +329,17 @@ impl SmartCrawler {
                             }
                         }
                         Err(e) => {
-                            tracing::warn!("Failed to analyze content for {}: {}", web_page.url, e);
-                            analysis.push(format!("URL: {}\nAnalysis failed: {e}", web_page.url));
+                            tracing::warn!(
+                                "Failed to analyze content for {}: {}",
+                                processed_page.url,
+                                e
+                            );
+                            analysis
+                                .push(format!("URL: {}\nAnalysis failed: {e}", processed_page.url));
                         }
                     }
 
-                    scraped_content.push(web_page);
+                    scraped_content.push(processed_page);
                     selected_urls.push(start_url.clone());
 
                     // Mark URL as scraped to avoid duplicates
@@ -278,11 +352,76 @@ impl SmartCrawler {
             }
         }
 
-        // Step 3: If sitemap is empty and we have analyzed starting URLs, check if we're done
+        // Step 3: Ensure we have at least 3 pages for proper duplicate detection
+        if scraped_content.len() < 3 {
+            tracing::info!(
+                "Current page count: {}. Ensuring minimum of 3 pages for duplicate detection.",
+                scraped_content.len()
+            );
+
+            // If sitemap is empty, try to get more URLs from scraped pages' links
+            let mut additional_urls = Vec::new();
+            if sitemap_urls.is_empty() {
+                for scraped_page in &scraped_content {
+                    for link in &scraped_page.links {
+                        if let Ok(parsed) = url::Url::parse(link) {
+                            if let Some(link_domain) = parsed.host_str() {
+                                if link_domain == domain
+                                    || link_domain.ends_with(&format!(".{domain}"))
+                                {
+                                    additional_urls.push(link.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            let urls_for_minimum = if !sitemap_urls.is_empty() {
+                let sitemap_strings: Vec<String> =
+                    sitemap_urls.iter().map(|u| u.loc.clone()).collect();
+                sitemap_strings
+            } else {
+                additional_urls
+            };
+
+            let additional_pages = self
+                .ensure_minimum_pages(domain, &scraped_content, &urls_for_minimum, &browser)
+                .await?;
+
+            // Process additional pages for analysis
+            for additional_page in additional_pages {
+                match self.analyze_page_content(&additional_page).await {
+                    Ok((page_analysis, entities, met)) => {
+                        analysis.extend(page_analysis);
+                        extracted_entities.extend(entities);
+                        if met {
+                            objective_met = true;
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            "Failed to analyze additional content for {}: {}",
+                            additional_page.url,
+                            e
+                        );
+                        analysis.push(format!(
+                            "URL: {}\nAnalysis failed: {e}",
+                            additional_page.url
+                        ));
+                    }
+                }
+                selected_urls.push(additional_page.url.clone());
+                scraped_content.push(additional_page);
+            }
+        }
+
+        // If sitemap is empty and we have analyzed starting URLs (and ensured minimum), check if we're done
         if sitemap_urls.is_empty() && !scraped_content.is_empty() {
             tracing::info!(
-                "No sitemap found, starting URL analysis complete for {}",
-                domain
+                "No sitemap found, starting URL analysis complete for {} ({} pages)",
+                domain,
+                scraped_content.len()
             );
             browser.close().await?;
             return Ok(CrawlResult {
@@ -493,15 +632,15 @@ impl SmartCrawler {
                 }
             }
 
-            match browser
-                .scrape_url_with_modes(url, self.config.extract_mode, self.config.grouped_mode)
-                .await
-            {
+            match browser.scrape_url(url).await {
                 Ok(web_page) => {
                     tracing::info!("Analyzing content from: {}", web_page.url);
 
+                    // Process page for duplicate detection
+                    let processed_page = self.process_scraped_page(domain, web_page).await;
+
                     // Analyze this page's content
-                    match self.analyze_page_content(&web_page).await {
+                    match self.analyze_page_content(&processed_page).await {
                         Ok((page_analysis, entities, met)) => {
                             analysis.extend(page_analysis);
                             extracted_entities.extend(entities);
@@ -510,12 +649,17 @@ impl SmartCrawler {
                             }
                         }
                         Err(e) => {
-                            tracing::warn!("Failed to analyze content for {}: {}", web_page.url, e);
-                            analysis.push(format!("URL: {}\nAnalysis failed: {e}", web_page.url));
+                            tracing::warn!(
+                                "Failed to analyze content for {}: {}",
+                                processed_page.url,
+                                e
+                            );
+                            analysis
+                                .push(format!("URL: {}\nAnalysis failed: {e}", processed_page.url));
                         }
                     }
 
-                    scraped_content.push(web_page);
+                    scraped_content.push(processed_page);
                 }
                 Err(e) => {
                     tracing::warn!("Failed to scrape URL {}: {}", url, e);
@@ -663,15 +807,22 @@ impl SmartCrawler {
             }
 
             tracing::info!("Scraping URL: {}", url);
-            match browser
-                .scrape_url_with_modes(url, self.config.extract_mode, self.config.grouped_mode)
-                .await
-            {
+            match browser.scrape_url(url).await {
                 Ok(web_page) => {
                     tracing::info!("Successfully scraped: {}", web_page.url);
 
+                    // Extract domain for duplicate detection
+                    let domain = if let Ok(parsed) = url::Url::parse(url) {
+                        parsed.host_str().unwrap_or("unknown").to_string()
+                    } else {
+                        "unknown".to_string()
+                    };
+
+                    // Process page for duplicate detection
+                    let processed_page = self.process_scraped_page(&domain, web_page).await;
+
                     // Analyze this page's content
-                    match self.analyze_page_content(&web_page).await {
+                    match self.analyze_page_content(&processed_page).await {
                         Ok((page_analysis, entities, met)) => {
                             analysis.extend(page_analysis);
                             extracted_entities.extend(entities);
@@ -680,12 +831,17 @@ impl SmartCrawler {
                             }
                         }
                         Err(e) => {
-                            tracing::warn!("Failed to analyze content for {}: {}", web_page.url, e);
-                            analysis.push(format!("URL: {}\nAnalysis failed: {e}", web_page.url));
+                            tracing::warn!(
+                                "Failed to analyze content for {}: {}",
+                                processed_page.url,
+                                e
+                            );
+                            analysis
+                                .push(format!("URL: {}\nAnalysis failed: {e}", processed_page.url));
                         }
                     }
 
-                    scraped_content.push(web_page);
+                    scraped_content.push(processed_page);
                 }
                 Err(e) => {
                     tracing::warn!("Failed to scrape URL {}: {}", url, e);

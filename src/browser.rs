@@ -33,23 +33,6 @@ impl Browser {
     }
 
     pub async fn scrape_url(&self, url: &str) -> Result<ScrapedWebPage, BrowserError> {
-        self.scrape_url_with_extraction(url, false).await
-    }
-
-    pub async fn scrape_url_with_extraction(
-        &self,
-        url: &str,
-        extract_mode: bool,
-    ) -> Result<ScrapedWebPage, BrowserError> {
-        self.scrape_url_with_modes(url, extract_mode, false).await
-    }
-
-    pub async fn scrape_url_with_modes(
-        &self,
-        url: &str,
-        extract_mode: bool,
-        grouped_mode: bool,
-    ) -> Result<ScrapedWebPage, BrowserError> {
         self.client.goto(url).await?;
 
         // Wait for initial page load
@@ -126,11 +109,9 @@ impl Browser {
             .filter(|heading| !heading.is_empty())
             .collect::<Vec<_>>();
 
-        let extraction_data = if extract_mode || grouped_mode {
+        let page_node_tree = {
             let extractor = HtmlExtractor::new();
             extractor.extract(&html)
-        } else {
-            None
         };
 
         Ok(ScrapedWebPage {
@@ -140,7 +121,8 @@ impl Browser {
             links,
             meta_description: Some(meta_description),
             headings,
-            extraction_data,
+            page_node_tree,
+            filtered_node_tree: None, // Will be populated by crawler after duplicate detection
         })
     }
 
