@@ -41,6 +41,15 @@ impl Browser {
         url: &str,
         extract_mode: bool,
     ) -> Result<ScrapedWebPage, BrowserError> {
+        self.scrape_url_with_modes(url, extract_mode, false).await
+    }
+
+    pub async fn scrape_url_with_modes(
+        &self,
+        url: &str,
+        extract_mode: bool,
+        grouped_mode: bool,
+    ) -> Result<ScrapedWebPage, BrowserError> {
         self.client.goto(url).await?;
 
         // Wait for initial page load
@@ -117,7 +126,7 @@ impl Browser {
             .filter(|heading| !heading.is_empty())
             .collect::<Vec<_>>();
 
-        let extraction_data = if extract_mode {
+        let extraction_data = if extract_mode || grouped_mode {
             let extractor = HtmlExtractor::new();
             extractor.extract(&html)
         } else {

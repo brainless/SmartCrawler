@@ -58,8 +58,9 @@ async fn handle_crawl_mode(config: CrawlerConfig) {
         .install_default()
         .expect("Failed to install rustls crypto provider");
 
-    // Store extract_mode before moving config
+    // Store extract_mode and grouped_mode before moving config
     let extract_mode = config.extract_mode;
+    let grouped_mode = config.grouped_mode;
 
     // Create and run crawler
     // Pass Arc<ClaudeClient> to SmartCrawler::new
@@ -93,6 +94,22 @@ async fn handle_crawl_mode(config: CrawlerConfig) {
                         if let Some(extraction_data) = &page.extraction_data {
                             let extractor = HtmlExtractor::new();
                             extractor.print_tree(extraction_data);
+                        } else {
+                            println!("No extraction data available for this page");
+                        }
+                        println!("{:=^60}", "");
+                    }
+                } else if grouped_mode {
+                    // In grouped mode, find and display grouped data
+                    println!("\nDomain: {}", result.domain);
+                    println!("Pages Analyzed: {}", result.scraped_content.len());
+
+                    for page in &result.scraped_content {
+                        println!("\n{:=^60}", format!(" {} ", page.url));
+                        if let Some(extraction_data) = &page.extraction_data {
+                            let extractor = HtmlExtractor::new();
+                            let grouped_data = extractor.find_grouped_data(extraction_data);
+                            extractor.print_grouped_data(&grouped_data);
                         } else {
                             println!("No extraction data available for this page");
                         }
