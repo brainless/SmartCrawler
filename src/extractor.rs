@@ -209,9 +209,6 @@ impl HtmlExtractor {
         let mut grouped_data = Vec::new();
         self.find_grouped_data_recursive(node, 0, "", &mut grouped_data);
 
-        // Filter out groups with less than 2 items
-        grouped_data.retain(|group| group.items.len() >= 2);
-
         // Deduplicate groups based on their signature
         grouped_data = self.deduplicate_grouped_data(grouped_data);
 
@@ -254,9 +251,9 @@ impl HtmlExtractor {
             sibling_groups.entry(key).or_default().push(child.clone());
         }
 
-        // Find groups with multiple items
+        // Find groups (including single items)
         for (key, items) in sibling_groups {
-            if items.len() >= 2 {
+            if !items.is_empty() {
                 let parts: Vec<&str> = key.split(':').collect();
                 let tag = parts[0].to_string();
                 let classes = if parts.len() > 1 && !parts[1].is_empty() {
@@ -301,7 +298,7 @@ impl HtmlExtractor {
 
     fn are_items_similar(&self, items: &[ExtractionNode]) -> bool {
         if items.len() < 2 {
-            return false;
+            return true; // Single items are considered valid groups
         }
 
         // Check if items have similar structure
