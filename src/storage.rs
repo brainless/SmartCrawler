@@ -2,7 +2,9 @@ use crate::html_parser::HtmlNode;
 use crate::utils::extract_domain_from_url;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashMap, HashSet};
+use std::hash::{Hash, Hasher};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum FetchStatus {
@@ -171,15 +173,24 @@ impl UrlStorage {
 
     fn is_meaningful_node(node: &HtmlNode) -> bool {
         // Consider a node meaningful if it has:
-        // - Non-empty content, OR
+        // - Non-empty content (text content or children), OR
         // - Specific CSS classes/IDs that indicate styling, OR
-        // - Is a semantic element with attributes
-        !node.content.trim().is_empty()
+        // - Is a semantic element that likely appears across multiple pages
+        (!node.content.trim().is_empty() || !node.children.is_empty())
             || !node.classes.is_empty()
             || node.id.is_some()
             || matches!(
                 node.tag.as_str(),
-                "nav" | "header" | "footer" | "aside" | "form" | "button" | "a"
+                "nav"
+                    | "header"
+                    | "footer"
+                    | "aside"
+                    | "form"
+                    | "button"
+                    | "a"
+                    | "ul"
+                    | "ol"
+                    | "menu"
             )
     }
 
@@ -314,6 +325,7 @@ mod tests {
         assert_eq!(signature.classes, vec!["container", "main"]);
         assert_eq!(signature.id, Some("content".to_string()));
         assert_eq!(signature.content, "Test content");
+        assert!(!signature.content_hash.is_empty());
     }
 
     #[test]
@@ -325,6 +337,7 @@ mod tests {
             classes: vec!["navbar".to_string()],
             id: None,
             content: "Navigation".to_string(),
+            content_hash: "test_hash".to_string(),
         };
 
         assert!(!duplicates.is_duplicate(&signature));
@@ -332,6 +345,32 @@ mod tests {
         duplicates.add_duplicate_node(signature.clone());
         assert!(duplicates.is_duplicate(&signature));
         assert_eq!(duplicates.get_duplicate_count(), 1);
+    }
+
+    #[test]
+    fn test_content_hash_includes_children() {
+        use crate::html_parser::HtmlParser;
+
+        let parser = HtmlParser::new();
+
+        // Two divs with same tag/class but different children
+        let html1 = r#"<div class="container"><p>Content 1</p></div>"#;
+        let html2 = r#"<div class="container"><p>Content 2</p></div>"#;
+        let html3 = r#"<div class="container"><p>Content 1</p></div>"#; // Same as html1
+
+        let node1 = parser.parse(html1);
+        let node2 = parser.parse(html2);
+        let node3 = parser.parse(html3);
+
+        let sig1 = NodeSignature::from_html_node(&node1);
+        let sig2 = NodeSignature::from_html_node(&node2);
+        let sig3 = NodeSignature::from_html_node(&node3);
+
+        // sig1 and sig2 should be different due to different child content
+        assert_ne!(sig1.content_hash, sig2.content_hash);
+
+        // sig1 and sig3 should be identical
+        assert_eq!(sig1.content_hash, sig3.content_hash);
     }
 }
 
@@ -341,15 +380,44 @@ pub struct NodeSignature {
     pub classes: Vec<String>,
     pub id: Option<String>,
     pub content: String,
+    pub content_hash: String, // Hash of complete structure including children
 }
 
 impl NodeSignature {
     pub fn from_html_node(node: &HtmlNode) -> Self {
+        let content_hash = Self::compute_content_hash(node);
+
         NodeSignature {
             tag: node.tag.clone(),
             classes: node.classes.clone(),
             id: node.id.clone(),
             content: node.content.clone(),
+            content_hash,
+        }
+    }
+
+    fn compute_content_hash(node: &HtmlNode) -> String {
+        let mut hasher = DefaultHasher::new();
+
+        // Hash the complete structure: tag, classes, id, content, and children structure
+        node.tag.hash(&mut hasher);
+        node.classes.hash(&mut hasher);
+        node.id.hash(&mut hasher);
+        node.content.hash(&mut hasher);
+
+        // Recursively hash children structure
+        Self::hash_children(&node.children, &mut hasher);
+
+        format!("{:x}", hasher.finish())
+    }
+
+    fn hash_children(children: &[HtmlNode], hasher: &mut DefaultHasher) {
+        for child in children {
+            child.tag.hash(hasher);
+            child.classes.hash(hasher);
+            child.id.hash(hasher);
+            child.content.hash(hasher);
+            Self::hash_children(&child.children, hasher);
         }
     }
 }

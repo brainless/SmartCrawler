@@ -159,7 +159,7 @@ async fn main() {
                     {
                         let filtered_tree =
                             HtmlParser::filter_domain_duplicates(html_tree, domain_duplicates);
-                        println!("Filtered HTML Tree:");
+                        println!("Filtered HTML Tree (showing complete structure with duplicate marking):");
                         print_html_tree(&filtered_tree, 0);
                     } else {
                         println!("HTML Tree (no duplicates to filter):");

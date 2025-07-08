@@ -342,12 +342,11 @@ mod tests {
         let node = parser.parse(html);
 
         let mut duplicates = DomainDuplicates::new();
-        let nav_signature = NodeSignature {
-            tag: "nav".to_string(),
-            classes: vec!["navbar".to_string()],
-            id: None,
-            content: "Navigation".to_string(),
-        };
+
+        // Find the nav element in the parsed tree and get its signature
+        let body = &node.children[0];
+        let nav_node = &body.children[0]; // The nav element
+        let nav_signature = NodeSignature::from_html_node(nav_node);
         duplicates.add_duplicate_node(nav_signature);
 
         let filtered = HtmlParser::filter_domain_duplicates(&node, &duplicates);
