@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Development Workflow
 - Create a new branch for each task. Branch names should start with chore/ or feature/ or fix/ etc.
-- Please add end to end tests for any new features added
+- Please add tests for any new features added
 - Please run formatters, linters and tests before committing changes
 - When finished please commit and push to the new branch
 - Please mention GitHub issue if provided
@@ -17,10 +17,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 cargo build --release
 
 # Run with basic command
-cargo run -- --objective "Find pricing information" --domains "example.com" --max-urls 5
+cargo run -- --link "https://example.com"
 
-# Run with all options including keyword filtering
-cargo run -- -o "Your objective" -d "domain1.com,domain2.com" -m 10 --delay 1000 -O results.json -v --candidate-multiplier 5
+# Run with multiple links
+cargo run -- --link "https://example.com" --link "https://another.com"
 ```
 
 ### Development Commands
@@ -36,38 +36,91 @@ cargo fmt
 
 # Run clippy for linting
 cargo clippy
+
+# Run tests
+cargo test
 ```
 
 ## Architecture Overview
 
-SmartCrawler is a Rust-based intelligent web crawler that uses LLMs (primarily Claude) to make smart decisions about which URLs to crawl based on crawling objectives.
+SmartCrawler is a Rust-based web crawler that uses WebDriver to extract and parse HTML content from web pages.
 
 ### Core Components
 
-**Main Flow**: `main.rs` → `SmartCrawler` → `LLM trait` → Results
-- Entry point parses CLI args and creates `CrawlerConfig`
-- Instantiates `ClaudeClient` and wraps in `Arc` for `SmartCrawler`
-- Calls `crawl_all_domains()` which processes each domain sequentially
+**Main Flow**: `main.rs` → CLI parsing → URL processing → Browser automation → HTML parsing → Results display
 
-**SmartCrawler** (`src/crawler.rs`):
-- Central orchestrator with two-stage URL selection (keyword ranking + LLM selection)
-- Tracks scraped URLs per domain to avoid duplicates
-- Handles sitemap-based and fallback crawling strategies
+**CLI Interface**: 
+- Accepts `--link` arguments for URLs to crawl
+- Handles duplicate URL detection
+- Validates and processes input arguments
 
-**LLM Abstraction** (`src/llm.rs`):
-- Defines `LLM` trait for swappable AI providers
-- Key methods: `generate_keywords()`, `select_urls()`, `analyze_content()`, `extract_entities()`
+**WebDriver Integration**:
+- Uses WebDriver to open URLs in local browser
+- Extracts HTML source via JavaScript execution
+- Handles browser automation and error cases
 
-**URL Selection Strategy**:
-1. **Sitemap Discovery**: Find XML sitemaps or scrape homepage for links
-2. **Keyword Generation**: LLM generates relevant keywords from objective
-3. **URL Ranking**: Score URLs based on keyword relevance in paths/queries
-4. **LLM Selection**: AI selects best URLs from top-ranked candidates
-5. **Content Analysis**: Extract structured entities matching TypeScript schemas
+**HTML Processing**:
+- Parses HTML into structured node tree
+- Applies filtering rules for relevant content
+- Extracts page titles and structured data
+
+**Storage System**:
+- Maintains URL storage per domain
+- Tracks fetch status and HTML data per URL
+- Ensures unique URLs only
 
 ## Environment Setup
 
-Requires `ANTHROPIC_API_KEY` environment variable. Create `.env` file:
+### WebDriver Setup
+
+SmartCrawler requires a WebDriver server to be running for browser automation. Follow these steps:
+
+#### Option 1: GeckoDriver (Firefox) - Recommended
+1. Download GeckoDriver from https://github.com/mozilla/geckodriver/releases
+2. Start GeckoDriver (uses port 4444 by default):
+   ```bash
+   geckodriver
+   ```
+
+#### Option 2: ChromeDriver
+1. Download ChromeDriver from https://chromedriver.chromium.org/
+2. Extract and place it in your PATH or a local directory
+3. Start ChromeDriver on port 4444:
+   ```bash
+   chromedriver --port=4444
+   ```
+
+#### Option 3: Using Docker
+```bash
+# Run Chrome in headless mode with WebDriver
+docker run -d -p 4444:4444 selenium/standalone-chrome:latest
 ```
-ANTHROPIC_API_KEY=your_key_here
+   
+#### Quick Start (if you have geckodriver installed)
+```bash
+# Start geckodriver in background (uses port 4444 by default)
+geckodriver &
+
+# Run SmartCrawler
+cargo run -- --link "https://example.com"
+
+# Stop geckodriver when done
+pkill geckodriver
 ```
+
+### Verification
+Test that WebDriver is running:
+```bash
+curl http://localhost:4444/status
+```
+
+You should see a JSON response indicating the WebDriver server is ready.
+
+## Testing
+
+Tests cover:
+- Text trimming and cleaning utilities
+- CLI argument parsing and validation
+- WebDriver browser opening and error handling
+- HTML parsing rules and node tree creation
+- URL storage and deduplication

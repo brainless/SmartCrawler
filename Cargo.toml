@@ -3,11 +3,11 @@ name = "smart-crawler"
 version = "0.3.2"
 edition = "2021"
 authors = ["SmartCrawler Team"]
-description = "A smart web crawler that uses LLMs to make smart crawling decisions"
+description = "A web crawler that uses WebDriver to extract and parse HTML content"
 license = "MIT"
-homepage = "https://github.com/brainless/SmartCrawler"
-repository = "https://github.com/brainless/SmartCrawler"
-keywords = ["crawler", "scraper", "llm", "ai", "web"]
+homepage = "https://github.com/pixlie/SmartCrawler"
+repository = "https://github.com/pixlie/SmartCrawler"
+keywords = ["crawler", "scraper", "webdriver", "html", "web"]
 categories = ["command-line-utilities", "web-programming"]
 readme = "README.md"
 
@@ -20,15 +20,22 @@ maintainer = "SmartCrawler Team"
 copyright = "2024, SmartCrawler Team"
 license-file = ["LICENSE", "4"]
 extended-description = """\
-SmartCrawler is an intelligent web crawler that leverages Large Language Models \
-to make smart decisions about which URLs to crawl based on crawling objectives. \
-It discovers sitemaps, analyzes content, and provides structured data extraction."""
+SmartCrawler is a web crawler that uses WebDriver to extract and parse HTML content \
+from web pages. It provides structured data extraction and HTML parsing capabilities."""
 depends = "$auto"
 section = "utility"
 priority = "optional"
 assets = [
-    ["target/release/smart-crawler", "usr/bin/", "755"],
-    ["README.md", "usr/share/doc/smart-crawler/", "644"],
+    [
+        "target/release/smart-crawler",
+        "usr/bin/",
+        "755",
+    ],
+    [
+        "README.md",
+        "usr/share/doc/smart-crawler/",
+        "644",
+    ],
 ]
 
 [package.metadata.rpm]
@@ -38,10 +45,10 @@ release = "1"
 epoch = 0
 license = "MIT"
 group = "Applications/Internet"
-summary = "An intelligent web crawler using LLMs"
+summary = "A web crawler using WebDriver"
 description = """\
-SmartCrawler is an intelligent web crawler that leverages Large Language Models \
-to make smart decisions about which URLs to crawl based on crawling objectives."""
+SmartCrawler is a web crawler that uses WebDriver to extract and parse HTML content \
+from web pages."""
 url = "https://github.com/brainless/SmartCrawler"
 
 [package.metadata.rpm.cargo]
@@ -66,13 +73,16 @@ thiserror = "1.0"
 tracing = "0.1"
 tracing-subscriber = "0.3"
 clap = { version = "4.0", features = ["derive"] }
-quick-xml = { version = "0.30", features = ["serialize"] }
-dotenv = "0.15"
-async-trait = "0.1"
-regex = "1.0"
-fantoccini = { version = "0.22.0", default-features = false, features = ["rustls-tls"] }
-reqwest = { version = "0.12.20", default-features = false, features = ["json", "rustls-tls"] }
+fantoccini = { version = "0.22.0", default-features = false, features = [
+    "rustls-tls",
+] }
+reqwest = { version = "0.12.20", default-features = false, features = [
+    "json",
+    "rustls-tls",
+] }
 rustls = { version = "0.23.28", default-features = false, features = ["ring"] }
-rand = { version = "0.9.1", default-features = false, features = ["thread_rng"] }
+regex = "1.0"
 chrono = { version = "0.4", features = ["serde"] }
-ts-rs = { version = "9.0", features = ["chrono-impl"] }
+
+[dev-dependencies]
+tempfile = "3.0"

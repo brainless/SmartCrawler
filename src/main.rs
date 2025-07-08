@@ -1,163 +1,106 @@
-use dotenv::dotenv;
-use smart_crawler::{
-    claude::ClaudeClient, // Import ClaudeClient for instantiation
-    cli::{AppMode, CrawlerConfig},
-    crawler::SmartCrawler,
-    extractor::HtmlExtractor,
-};
-use std::sync::Arc; // Import Arc
-use tracing::{error, info};
+use smart_crawler::{Browser, CliArgs, FetchStatus, HtmlParser, UrlStorage};
+use tracing::{debug, error, info};
 
 #[tokio::main]
 async fn main() {
-    dotenv().ok();
-    // Parse command line arguments
-    let app_mode = CrawlerConfig::from_args();
-
-    match app_mode {
-        AppMode::Crawl(config) => {
-            handle_crawl_mode(config).await;
-        }
-    }
-}
-
-async fn handle_crawl_mode(config: CrawlerConfig) {
-    // Initialize logging
-    if config.verbose {
-        tracing_subscriber::fmt()
-            .with_max_level(tracing::Level::DEBUG)
-            .init();
-    } else {
-        tracing_subscriber::fmt()
-            .with_max_level(tracing::Level::INFO)
-            .init();
-    }
-
-    // Validate configuration
-    if let Err(e) = config.validate() {
-        error!("Configuration error: {}", e);
-        std::process::exit(1);
-    }
-
-    info!("Starting Smart Crawler");
-    info!("Objective: {}", config.objective);
-    info!("Domains: {:?}", config.domains);
-    info!("Max URLs per domain: {}", config.max_urls_per_domain);
-    info!("Delay between requests: {}ms", config.delay_ms);
-
-    // Instantiate ClaudeClient
-    let claude_client = match ClaudeClient::new() {
-        Ok(client) => client,
-        Err(e) => {
-            error!("Failed to create ClaudeClient: {}", e);
-            std::process::exit(1);
-        }
-    };
-
+    // Initialize crypto provider for rustls
     rustls::crypto::ring::default_provider()
         .install_default()
-        .expect("Failed to install rustls crypto provider");
+        .expect("Failed to install default crypto provider");
 
-    // Store extract_mode and grouped_mode before moving config
-    let extract_mode = config.extract_mode;
-    let grouped_mode = config.grouped_mode;
+    tracing_subscriber::fmt::init();
 
-    // Create and run crawler
-    // Pass Arc<ClaudeClient> to SmartCrawler::new
-    let crawler = match SmartCrawler::new(config, Arc::new(claude_client)).await {
-        Ok(crawler) => crawler,
+    let args = match CliArgs::parse() {
+        Ok(args) => args,
         Err(e) => {
-            // CrawlerError now includes LlmError or ClaudeInitializationError
-            error!("Failed to initialize crawler: {}", e);
+            error!("Error parsing arguments: {}", e);
             std::process::exit(1);
         }
     };
 
-    match crawler.crawl_all_domains().await {
-        Ok(results) => {
-            info!("Crawling completed successfully!");
+    info!("Starting SmartCrawler with {} URLs", args.links.len());
 
-            // Print results to console
-            println!("\n{:=^80}", " CRAWLING RESULTS ");
-            println!("Objective: {}", results.objective);
-            println!("Domains: {}", results.domains.join(", "));
-            println!("\n{:-^80}", " DOMAIN RESULTS ");
+    let mut storage = UrlStorage::new();
+    for link in &args.links {
+        storage.add_url(link.clone());
+    }
 
-            for result in &results.results {
-                if extract_mode {
-                    // In extract mode, print the tree structures
-                    println!("\nDomain: {}", result.domain);
-                    println!("Pages Extracted: {}", result.scraped_content.len());
+    let mut browser = Browser::new(4444);
 
-                    for page in &result.scraped_content {
-                        println!("\n{:=^60}", format!(" {} ", page.url));
-                        if let Some(extraction_data) = &page.extraction_data {
-                            let extractor = HtmlExtractor::new();
-                            extractor.print_tree(extraction_data);
-                        } else {
-                            println!("No extraction data available for this page");
-                        }
-                        println!("{:=^60}", "");
-                    }
-                } else if grouped_mode {
-                    // In grouped mode, find and display grouped data
-                    println!("\nDomain: {}", result.domain);
-                    println!("Pages Analyzed: {}", result.scraped_content.len());
-
-                    for page in &result.scraped_content {
-                        println!("\n{:=^60}", format!(" {} ", page.url));
-                        if let Some(extraction_data) = &page.extraction_data {
-                            let extractor = HtmlExtractor::new();
-                            let grouped_data = extractor.find_grouped_data(extraction_data);
-                            extractor.print_grouped_data(&grouped_data);
-                        } else {
-                            println!("No extraction data available for this page");
-                        }
-                        println!("{:=^60}", "");
-                    }
-                } else {
-                    // Normal mode output
-                    println!("\nDomain: {}", result.domain);
-                    println!("URLs Selected: {}", result.selected_urls.len());
-                    println!("Pages Scraped: {}", result.scraped_content.len());
-                    println!(
-                        "Entities Extracted: {}",
-                        result
-                            .extracted_entities
-                            .iter()
-                            .map(|e| e.entity_count())
-                            .sum::<usize>()
-                    );
-
-                    println!("Analysis:");
-                    for analysis_item in &result.analysis {
-                        println!("- {analysis_item}");
-                    }
-
-                    if !result.extracted_entities.is_empty() {
-                        println!("\nExtracted Entities:");
-                        for entity_result in &result.extracted_entities {
-                            println!(
-                                "  From {}: {} entities (confidence: {:.1}%)",
-                                entity_result.url,
-                                entity_result.entity_count(),
-                                entity_result.extraction_confidence * 100.0
-                            );
-                        }
-                    }
-
-                    println!("{:-^50}", "");
-                }
-            }
-
-            // Save results if output file specified
-            if let Err(e) = crawler.save_results(&results).await {
-                error!("Failed to save results: {}", e);
-            }
-        }
+    match browser.connect().await {
+        Ok(()) => info!("Connected to WebDriver"),
         Err(e) => {
-            error!("Crawling failed: {}", e);
+            error!("Failed to connect to WebDriver: {}", e);
+            eprintln!("\n❌ WebDriver Connection Failed");
+            eprintln!("📋 Please ensure a WebDriver server is running on port 4444");
+            eprintln!("💡 Quick setup options:");
+            eprintln!("   • GeckoDriver: geckodriver (uses port 4444 by default)");
+            eprintln!("   • ChromeDriver: chromedriver --port=4444");
+            eprintln!("   • Docker: docker run -d -p 4444:4444 selenium/standalone-chrome:latest");
+            eprintln!("   • Check status: curl http://localhost:4444/status");
+            eprintln!("📖 See CLAUDE.md for detailed setup instructions");
             std::process::exit(1);
         }
     }
+
+    let parser = HtmlParser::new();
+
+    for url in &args.links {
+        info!("Processing URL: {}", url);
+
+        if let Some(url_data) = storage.get_url_data_mut(url) {
+            url_data.update_status(FetchStatus::InProgress);
+        }
+
+        match browser.navigate_to(url).await {
+            Ok(()) => {
+                debug!("Successfully navigated to {}", url);
+
+                match browser.get_html_source().await {
+                    Ok(html_source) => {
+                        let title = browser.get_page_title().await.ok();
+                        let html_tree = parser.parse(&html_source);
+
+                        if let Some(url_data) = storage.get_url_data_mut(url) {
+                            url_data.set_html_data(html_source, html_tree, title);
+                            url_data.update_status(FetchStatus::Success);
+                        }
+
+                        info!("Successfully processed {}", url);
+                    }
+                    Err(e) => {
+                        error!("Failed to get HTML source for {}: {}", url, e);
+                        if let Some(url_data) = storage.get_url_data_mut(url) {
+                            url_data.update_status(FetchStatus::Failed(e.to_string()));
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                error!("Failed to navigate to {}: {}", url, e);
+                if let Some(url_data) = storage.get_url_data_mut(url) {
+                    url_data.update_status(FetchStatus::Failed(e.to_string()));
+                }
+            }
+        }
+    }
+
+    let _ = browser.close().await;
+
+    println!("\n=== Crawling Results ===");
+    let completed_urls = storage.get_completed_urls();
+
+    if completed_urls.is_empty() {
+        println!("No URLs were successfully processed.");
+    } else {
+        for url_data in completed_urls {
+            let title = url_data.title.as_deref().unwrap_or("No title found");
+            println!("URL: {}", url_data.url);
+            println!("Title: {title}");
+            println!("Domain: {}", url_data.domain);
+            println!("---");
+        }
+    }
+
+    info!("SmartCrawler finished processing {} URLs", args.links.len());
 }
