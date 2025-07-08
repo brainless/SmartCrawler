@@ -71,7 +71,50 @@ SmartCrawler is a Rust-based web crawler that uses WebDriver to extract and pars
 
 ## Environment Setup
 
-Requires WebDriver setup for browser automation. Ensure you have a compatible WebDriver installed (ChromeDriver, GeckoDriver, etc.).
+### WebDriver Setup
+
+SmartCrawler requires a WebDriver server to be running for browser automation. Follow these steps:
+
+#### Option 1: GeckoDriver (Firefox) - Recommended
+1. Download GeckoDriver from https://github.com/mozilla/geckodriver/releases
+2. Start GeckoDriver (uses port 4444 by default):
+   ```bash
+   geckodriver
+   ```
+
+#### Option 2: ChromeDriver
+1. Download ChromeDriver from https://chromedriver.chromium.org/
+2. Extract and place it in your PATH or a local directory
+3. Start ChromeDriver on port 4444:
+   ```bash
+   chromedriver --port=4444
+   ```
+
+#### Option 3: Using Docker
+```bash
+# Run Chrome in headless mode with WebDriver
+docker run -d -p 4444:4444 selenium/standalone-chrome:latest
+```
+   
+#### Quick Start (if you have geckodriver installed)
+```bash
+# Start geckodriver in background (uses port 4444 by default)
+geckodriver &
+
+# Run SmartCrawler
+cargo run -- --link "https://example.com"
+
+# Stop geckodriver when done
+pkill geckodriver
+```
+
+### Verification
+Test that WebDriver is running:
+```bash
+curl http://localhost:4444/status
+```
+
+You should see a JSON response indicating the WebDriver server is ready.
 
 ## Testing
 

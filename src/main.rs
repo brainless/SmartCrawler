@@ -26,12 +26,20 @@ async fn main() {
         storage.add_url(link.clone());
     }
 
-    let mut browser = Browser::new(9515);
+    let mut browser = Browser::new(4444);
 
     match browser.connect().await {
         Ok(()) => info!("Connected to WebDriver"),
         Err(e) => {
             error!("Failed to connect to WebDriver: {}", e);
+            eprintln!("\n❌ WebDriver Connection Failed");
+            eprintln!("📋 Please ensure a WebDriver server is running on port 4444");
+            eprintln!("💡 Quick setup options:");
+            eprintln!("   • GeckoDriver: geckodriver (uses port 4444 by default)");
+            eprintln!("   • ChromeDriver: chromedriver --port=4444");
+            eprintln!("   • Docker: docker run -d -p 4444:4444 selenium/standalone-chrome:latest");
+            eprintln!("   • Check status: curl http://localhost:4444/status");
+            eprintln!("📖 See CLAUDE.md for detailed setup instructions");
             std::process::exit(1);
         }
     }

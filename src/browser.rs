@@ -113,7 +113,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_browser_operations_without_connection() {
-        let mut browser = Browser::new(9515);
+        let mut browser = Browser::new(4444);
 
         let result = browser.navigate_to("https://example.com").await;
         assert!(result.is_err());
@@ -130,7 +130,7 @@ mod tests {
         rustls::crypto::ring::default_provider()
             .install_default()
             .ok();
-        let mut browser = Browser::new(9515);
+        let mut browser = Browser::new(4444);
 
         if browser.connect().await.is_ok() {
             let result = browser.navigate_to("https://example.com").await;
