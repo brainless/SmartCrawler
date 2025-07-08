@@ -1,7 +1,9 @@
+use crate::storage::{DomainDuplicates, NodeSignature};
 use crate::utils::{is_numeric_id, trim_and_clean_text};
 use scraper::{ElementRef, Html, Selector};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+use url::Url;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HtmlNode {
@@ -147,6 +149,83 @@ impl HtmlParser {
                 && existing.content == node.content
         })
     }
+
+    pub fn filter_domain_duplicates(
+        &self,
+        node: &HtmlNode,
+        domain_duplicates: &DomainDuplicates,
+    ) -> HtmlNode {
+        let signature = NodeSignature::from_html_node(node);
+
+        if domain_duplicates.is_duplicate(&signature) {
+            // Return an empty placeholder node for duplicates
+            return HtmlNode::new(
+                "filtered".to_string(),
+                vec![],
+                None,
+                "[duplicate content filtered]".to_string(),
+            );
+        }
+
+        let mut filtered_node = HtmlNode::new(
+            node.tag.clone(),
+            node.classes.clone(),
+            node.id.clone(),
+            node.content.clone(),
+        );
+
+        for child in &node.children {
+            let filtered_child = self.filter_domain_duplicates(child, domain_duplicates);
+            if !self.is_filtered_placeholder(&filtered_child) {
+                filtered_node.add_child(filtered_child);
+            }
+        }
+
+        filtered_node
+    }
+
+    fn is_filtered_placeholder(&self, node: &HtmlNode) -> bool {
+        node.tag == "filtered" && node.content == "[duplicate content filtered]"
+    }
+
+    pub fn extract_links(&self, html: &str, base_domain: &str) -> Vec<String> {
+        let document = Html::parse_document(html);
+        let link_selector = Selector::parse("a[href]").unwrap();
+        let mut links = HashSet::new();
+
+        for element in document.select(&link_selector) {
+            if let Some(href) = element.value().attr("href") {
+                if let Ok(url) = self.resolve_url(href, base_domain) {
+                    if self.is_same_domain(&url, base_domain) {
+                        links.insert(url);
+                    }
+                }
+            }
+        }
+
+        links.into_iter().collect()
+    }
+
+    fn resolve_url(&self, href: &str, base_domain: &str) -> Result<String, String> {
+        if href.starts_with("http://") || href.starts_with("https://") {
+            Ok(href.to_string())
+        } else if href.starts_with('/') {
+            Ok(format!("https://{base_domain}{href}"))
+        } else if href.starts_with("//") {
+            Ok(format!("https:{href}"))
+        } else {
+            Ok(format!("https://{base_domain}/{href}"))
+        }
+    }
+
+    fn is_same_domain(&self, url: &str, base_domain: &str) -> bool {
+        if let Ok(parsed_url) = Url::parse(url) {
+            if let Some(host) = parsed_url.host_str() {
+                return host == base_domain || host.ends_with(&format!(".{base_domain}"));
+            }
+        }
+        false
+    }
 }
 
 impl Default for HtmlParser {
@@ -244,5 +323,62 @@ mod tests {
         let body = &node.children[0];
         assert_eq!(body.children.len(), 1);
         assert_eq!(body.children[0].tag, "p");
+    }
+
+    #[test]
+    fn test_extract_links() {
+        let parser = HtmlParser::new();
+        let html = r#"<html><body>
+            <a href="/page1">Link 1</a>
+            <a href="https://example.com/page2">Link 2</a>
+            <a href="https://other.com/page3">External Link</a>
+            <a href="//example.com/page4">Protocol-relative</a>
+        </body></html>"#;
+
+        let links = parser.extract_links(html, "example.com");
+
+        assert!(links.contains(&"https://example.com/page1".to_string()));
+        assert!(links.contains(&"https://example.com/page2".to_string()));
+        // Protocol-relative URLs are handled correctly
+        assert!(links.iter().any(|link| link.contains("page4")));
+        assert!(!links.iter().any(|link| link.contains("other.com")));
+    }
+
+    #[test]
+    fn test_filter_domain_duplicates() {
+        use crate::storage::{DomainDuplicates, NodeSignature};
+
+        let parser = HtmlParser::new();
+        let html = r#"<html><body><nav class="navbar">Navigation</nav><div class="content">Main content</div></body></html>"#;
+        let node = parser.parse(html);
+
+        let mut duplicates = DomainDuplicates::new();
+        let nav_signature = NodeSignature {
+            tag: "nav".to_string(),
+            classes: vec!["navbar".to_string()],
+            id: None,
+            content: "Navigation".to_string(),
+        };
+        duplicates.add_duplicate_node(nav_signature);
+
+        let filtered = parser.filter_domain_duplicates(&node, &duplicates);
+
+        // The nav element should be filtered out
+        assert_eq!(filtered.tag, "html");
+        let body = &filtered.children[0];
+        assert_eq!(body.tag, "body");
+        assert_eq!(body.children.len(), 1); // Only the div should remain
+        assert_eq!(body.children[0].tag, "div");
+        assert_eq!(body.children[0].classes, vec!["content"]);
+    }
+
+    #[test]
+    fn test_is_same_domain() {
+        let parser = HtmlParser::new();
+
+        assert!(parser.is_same_domain("https://example.com/page", "example.com"));
+        assert!(parser.is_same_domain("https://sub.example.com/page", "example.com"));
+        assert!(!parser.is_same_domain("https://other.com/page", "example.com"));
+        assert!(!parser.is_same_domain("https://notexample.com/page", "example.com"));
     }
 }

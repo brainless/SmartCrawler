@@ -5,6 +5,7 @@ use url::Url;
 #[derive(Debug, Clone)]
 pub struct CliArgs {
     pub links: Vec<String>,
+    pub verbose: bool,
 }
 
 impl CliArgs {
@@ -20,6 +21,12 @@ impl CliArgs {
                     .action(clap::ArgAction::Append)
                     .required(true),
             )
+            .arg(
+                Arg::new("verbose")
+                    .long("verbose")
+                    .help("Enable verbose output showing filtered HTML node tree")
+                    .action(clap::ArgAction::SetTrue),
+            )
             .get_matches();
 
         let links: Vec<String> = matches
@@ -29,9 +36,11 @@ impl CliArgs {
             .collect();
 
         let validated_links = Self::validate_and_deduplicate_links(links)?;
+        let verbose = matches.get_flag("verbose");
 
         Ok(CliArgs {
             links: validated_links,
+            verbose,
         })
     }
 

@@ -2,7 +2,7 @@ use crate::html_parser::HtmlNode;
 use crate::utils::extract_domain_from_url;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum FetchStatus {
@@ -62,12 +62,14 @@ impl UrlData {
 #[derive(Debug, Default)]
 pub struct UrlStorage {
     urls_by_domain: HashMap<String, HashMap<String, UrlData>>,
+    domain_duplicates: HashMap<String, DomainDuplicates>,
 }
 
 impl UrlStorage {
     pub fn new() -> Self {
         UrlStorage {
             urls_by_domain: HashMap::new(),
+            domain_duplicates: HashMap::new(),
         }
     }
 
@@ -110,6 +112,61 @@ impl UrlStorage {
             .into_iter()
             .filter(|url_data| matches!(url_data.status, FetchStatus::Success))
             .collect()
+    }
+
+    pub fn analyze_domain_duplicates(&mut self, domain: &str) {
+        if let Some(domain_urls) = self.urls_by_domain.get(domain) {
+            let completed_urls: Vec<_> = domain_urls
+                .values()
+                .filter(|url_data| matches!(url_data.status, FetchStatus::Success))
+                .collect();
+
+            if completed_urls.len() < 2 {
+                return; // Need at least 2 pages to find duplicates
+            }
+
+            let mut node_occurrence_count: HashMap<NodeSignature, usize> = HashMap::new();
+
+            // Count occurrences of each node signature across all pages
+            for url_data in &completed_urls {
+                if let Some(html_tree) = &url_data.html_tree {
+                    Self::collect_node_signatures(html_tree, &mut node_occurrence_count);
+                }
+            }
+
+            // Mark nodes that appear in 2 or more pages as duplicates
+            let domain_duplicates = self
+                .domain_duplicates
+                .entry(domain.to_string())
+                .or_default();
+            for (signature, count) in node_occurrence_count {
+                if count >= 2 {
+                    domain_duplicates.add_duplicate_node(signature);
+                }
+            }
+        }
+    }
+
+    fn collect_node_signatures(
+        node: &HtmlNode,
+        signatures: &mut HashMap<NodeSignature, usize>,
+    ) {
+        let signature = NodeSignature::from_html_node(node);
+        *signatures.entry(signature).or_insert(0) += 1;
+
+        for child in &node.children {
+            Self::collect_node_signatures(child, signatures);
+        }
+    }
+
+    pub fn get_domain_duplicates(&self, domain: &str) -> Option<&DomainDuplicates> {
+        self.domain_duplicates.get(domain)
+    }
+
+    pub fn add_urls_from_same_domain(&mut self, urls: Vec<String>) {
+        for url in urls {
+            self.add_url(url);
+        }
     }
 }
 
@@ -163,5 +220,137 @@ mod tests {
 
         assert!(matches!(url_data.status, FetchStatus::InProgress));
         assert!(url_data.updated_at > original_time);
+    }
+
+    #[test]
+    fn test_add_urls_from_same_domain() {
+        let mut storage = UrlStorage::new();
+        let urls = vec![
+            "https://example.com/page1".to_string(),
+            "https://example.com/page2".to_string(),
+            "https://example.com/page3".to_string(),
+        ];
+
+        storage.add_urls_from_same_domain(urls);
+
+        let example_com_urls = storage.get_urls_by_domain("example.com");
+        assert!(example_com_urls.is_some());
+        assert_eq!(example_com_urls.unwrap().len(), 3);
+    }
+
+    #[test]
+    fn test_analyze_domain_duplicates() {
+        use crate::html_parser::HtmlParser;
+
+        let mut storage = UrlStorage::new();
+        let parser = HtmlParser::new();
+
+        storage.add_url("https://example.com/page1".to_string());
+        storage.add_url("https://example.com/page2".to_string());
+
+        // Create mock HTML trees with common elements
+        let html1 = r#"<html><body><nav class="navbar">Navigation</nav><div class="content">Page 1 content</div></body></html>"#;
+        let html2 = r#"<html><body><nav class="navbar">Navigation</nav><div class="content">Page 2 content</div></body></html>"#;
+
+        let tree1 = parser.parse(html1);
+        let tree2 = parser.parse(html2);
+
+        // Set the HTML data for both URLs
+        if let Some(url_data) = storage.get_url_data_mut("https://example.com/page1") {
+            url_data.set_html_data(html1.to_string(), tree1, Some("Page 1".to_string()));
+            url_data.update_status(FetchStatus::Success);
+        }
+
+        if let Some(url_data) = storage.get_url_data_mut("https://example.com/page2") {
+            url_data.set_html_data(html2.to_string(), tree2, Some("Page 2".to_string()));
+            url_data.update_status(FetchStatus::Success);
+        }
+
+        // Analyze domain duplicates
+        storage.analyze_domain_duplicates("example.com");
+
+        let duplicates = storage.get_domain_duplicates("example.com");
+        assert!(duplicates.is_some());
+        assert!(duplicates.unwrap().get_duplicate_count() > 0);
+    }
+
+    #[test]
+    fn test_node_signature_creation() {
+        use crate::html_parser::HtmlNode;
+
+        let node = HtmlNode::new(
+            "div".to_string(),
+            vec!["container".to_string(), "main".to_string()],
+            Some("content".to_string()),
+            "Test content".to_string(),
+        );
+
+        let signature = NodeSignature::from_html_node(&node);
+        assert_eq!(signature.tag, "div");
+        assert_eq!(signature.classes, vec!["container", "main"]);
+        assert_eq!(signature.id, Some("content".to_string()));
+        assert_eq!(signature.content, "Test content");
+    }
+
+    #[test]
+    fn test_domain_duplicates_detection() {
+        let mut duplicates = DomainDuplicates::new();
+
+        let signature = NodeSignature {
+            tag: "nav".to_string(),
+            classes: vec!["navbar".to_string()],
+            id: None,
+            content: "Navigation".to_string(),
+        };
+
+        assert!(!duplicates.is_duplicate(&signature));
+
+        duplicates.add_duplicate_node(signature.clone());
+        assert!(duplicates.is_duplicate(&signature));
+        assert_eq!(duplicates.get_duplicate_count(), 1);
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct NodeSignature {
+    pub tag: String,
+    pub classes: Vec<String>,
+    pub id: Option<String>,
+    pub content: String,
+}
+
+impl NodeSignature {
+    pub fn from_html_node(node: &HtmlNode) -> Self {
+        NodeSignature {
+            tag: node.tag.clone(),
+            classes: node.classes.clone(),
+            id: node.id.clone(),
+            content: node.content.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct DomainDuplicates {
+    duplicate_nodes: HashSet<NodeSignature>,
+}
+
+impl DomainDuplicates {
+    pub fn new() -> Self {
+        DomainDuplicates {
+            duplicate_nodes: HashSet::new(),
+        }
+    }
+
+    pub fn add_duplicate_node(&mut self, signature: NodeSignature) {
+        self.duplicate_nodes.insert(signature);
+    }
+
+    pub fn is_duplicate(&self, signature: &NodeSignature) -> bool {
+        self.duplicate_nodes.contains(signature)
+    }
+
+    pub fn get_duplicate_count(&self) -> usize {
+        self.duplicate_nodes.len()
     }
 }
