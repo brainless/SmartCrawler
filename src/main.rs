@@ -58,6 +58,20 @@ async fn main() {
         }
     }
 
+    // Add root URLs for each domain if not already present
+    for (domain, urls) in &mut domain_urls {
+        let root_url = smart_crawler::utils::construct_root_url(domain);
+        if !urls.contains(&root_url) {
+            urls.insert(root_url.clone());
+            storage.add_url(root_url);
+            info!(
+                "Added root URL for domain {}: {}",
+                domain,
+                smart_crawler::utils::construct_root_url(domain)
+            );
+        }
+    }
+
     // For each domain, try to find additional URLs
     for (domain, urls) in &mut domain_urls {
         if urls.len() < 3 {
@@ -97,13 +111,32 @@ async fn main() {
         }
     }
 
-    // Phase 2: Process all URLs (initial + discovered)
-    info!("Processing all URLs");
+    // Phase 2: Process all URLs (initial + discovered) with root URL prioritization
+    info!("Processing all URLs with root URL prioritization");
 
-    let all_urls: Vec<String> = domain_urls
-        .values()
-        .flat_map(|urls| urls.iter().cloned())
-        .collect();
+    let mut all_urls: Vec<String> = Vec::new();
+
+    // First, add all user-specified URLs
+    for url in &args.links {
+        all_urls.push(url.clone());
+    }
+
+    // Then, add root URLs for each domain (if not already in user-specified URLs)
+    for domain in domain_urls.keys() {
+        let root_url = smart_crawler::utils::construct_root_url(domain);
+        if !args.links.contains(&root_url) {
+            all_urls.push(root_url);
+        }
+    }
+
+    // Finally, add all other discovered URLs
+    for urls in domain_urls.values() {
+        for url in urls {
+            if !args.links.contains(url) && !smart_crawler::utils::is_root_url(url) {
+                all_urls.push(url.clone());
+            }
+        }
+    }
 
     for url in &all_urls {
         if let Some(url_data) = storage.get_url_data(url) {
@@ -230,16 +263,24 @@ async fn process_url(
 fn print_html_tree(node: &smart_crawler::HtmlNode, indent: usize) {
     let indent_str = "  ".repeat(indent);
 
+    // Build the element info string with tag, id, and classes
+    let mut element_info = node.tag.clone();
+    if let Some(id) = &node.id {
+        element_info.push_str(&format!("#{id}"));
+    }
+    if !node.classes.is_empty() {
+        element_info.push_str(&format!("[{}]", node.classes.join(" ")));
+    }
+
     if !node.content.is_empty() {
         println!(
-            "{}{}[{}]: {}",
+            "{}{}: {}",
             indent_str,
-            node.tag,
-            node.classes.join(" "),
+            element_info,
             node.content.chars().take(100).collect::<String>()
         );
     } else {
-        println!("{}{}[{}]", indent_str, node.tag, node.classes.join(" "));
+        println!("{indent_str}{element_info}");
     }
 
     for child in &node.children {

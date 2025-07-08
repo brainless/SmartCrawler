@@ -1,5 +1,5 @@
 use crate::storage::{DomainDuplicates, NodeSignature};
-use crate::utils::{is_numeric_id, trim_and_clean_text};
+use crate::utils::trim_and_clean_text;
 use scraper::{ElementRef, Html, Selector};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -128,7 +128,7 @@ impl HtmlParser {
             .value()
             .attr("id")
             .map(|id| id.trim().to_string())
-            .filter(|id| !id.is_empty() && !is_numeric_id(id))
+            .filter(|id| !id.is_empty())
     }
 
     fn extract_text_content(&self, element: ElementRef) -> String {
@@ -261,7 +261,7 @@ mod tests {
     }
 
     #[test]
-    fn test_html_parser_ignores_numeric_ids() {
+    fn test_html_parser_preserves_numeric_ids() {
         let parser = HtmlParser::new();
         let html = r#"<html><body><div id="123">Text</div></body></html>"#;
         let node = parser.parse(html);
@@ -269,7 +269,7 @@ mod tests {
         let body = &node.children[0];
         assert_eq!(body.children.len(), 1);
         let div_node = &body.children[0];
-        assert_eq!(div_node.id, None);
+        assert_eq!(div_node.id, Some("123".to_string()));
     }
 
     #[test]

@@ -19,8 +19,21 @@ pub fn extract_domain_from_url(url: &str) -> Option<String> {
         .and_then(|parsed| parsed.host_str().map(|host| host.to_string()))
 }
 
-pub fn is_numeric_id(id: &str) -> bool {
-    !id.is_empty() && id.chars().all(|c| c.is_ascii_digit())
+pub fn construct_root_url(domain: &str) -> String {
+    format!("https://{domain}")
+}
+
+pub fn is_root_url(url: &str) -> bool {
+    if let Ok(parsed) = url::Url::parse(url) {
+        let path = parsed.path();
+        let query = parsed.query();
+        let fragment = parsed.fragment();
+
+        // Root URL has path "/" or empty, no query parameters, and no fragment
+        (path == "/" || path.is_empty()) && query.is_none() && fragment.is_none()
+    } else {
+        false
+    }
 }
 
 #[cfg(test)]
@@ -52,11 +65,25 @@ mod tests {
     }
 
     #[test]
-    fn test_is_numeric_id() {
-        assert!(is_numeric_id("123"));
-        assert!(is_numeric_id("0"));
-        assert!(!is_numeric_id("abc"));
-        assert!(!is_numeric_id("12a"));
-        assert!(!is_numeric_id(""));
+    fn test_construct_root_url() {
+        assert_eq!(construct_root_url("example.com"), "https://example.com");
+        assert_eq!(
+            construct_root_url("subdomain.example.com"),
+            "https://subdomain.example.com"
+        );
+    }
+
+    #[test]
+    fn test_is_root_url() {
+        assert!(is_root_url("https://example.com"));
+        assert!(is_root_url("https://example.com/"));
+        assert!(is_root_url("http://example.com"));
+        assert!(is_root_url("http://example.com/"));
+
+        assert!(!is_root_url("https://example.com/path"));
+        assert!(!is_root_url("https://example.com/?query=value"));
+        assert!(!is_root_url("https://example.com/#fragment"));
+        assert!(!is_root_url("https://example.com/path?query=value"));
+        assert!(!is_root_url("invalid-url"));
     }
 }
