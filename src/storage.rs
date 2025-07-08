@@ -74,10 +74,7 @@ impl UrlStorage {
     pub fn add_url(&mut self, url: String) -> bool {
         let domain = extract_domain_from_url(&url).unwrap_or_else(|| "unknown".to_string());
 
-        let domain_urls = self
-            .urls_by_domain
-            .entry(domain.clone())
-            .or_default();
+        let domain_urls = self.urls_by_domain.entry(domain.clone()).or_default();
 
         if domain_urls.contains_key(&url) {
             false // URL already exists
