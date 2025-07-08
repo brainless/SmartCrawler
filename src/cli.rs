@@ -48,7 +48,7 @@ impl CliArgs {
                     }
                 }
                 Err(_) => {
-                    return Err(format!("Invalid URL: {}", link));
+                    return Err(format!("Invalid URL: {link}"));
                 }
             }
         }

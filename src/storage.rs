@@ -77,7 +77,7 @@ impl UrlStorage {
         let domain_urls = self
             .urls_by_domain
             .entry(domain.clone())
-            .or_insert_with(HashMap::new);
+            .or_default();
 
         if domain_urls.contains_key(&url) {
             false // URL already exists

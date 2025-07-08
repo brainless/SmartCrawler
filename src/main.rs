@@ -1,6 +1,5 @@
 use smart_crawler::{Browser, CliArgs, FetchStatus, HtmlParser, UrlStorage};
 use tracing::{debug, error, info};
-use tracing_subscriber;
 
 #[tokio::main]
 async fn main() {
@@ -8,7 +7,7 @@ async fn main() {
     rustls::crypto::ring::default_provider()
         .install_default()
         .expect("Failed to install default crypto provider");
-    
+
     tracing_subscriber::fmt::init();
 
     let args = match CliArgs::parse() {
@@ -97,7 +96,7 @@ async fn main() {
         for url_data in completed_urls {
             let title = url_data.title.as_deref().unwrap_or("No title found");
             println!("URL: {}", url_data.url);
-            println!("Title: {}", title);
+            println!("Title: {title}");
             println!("Domain: {}", url_data.domain);
             println!("---");
         }

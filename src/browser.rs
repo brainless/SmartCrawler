@@ -32,7 +32,7 @@ impl Browser {
 
         let client = ClientBuilder::rustls()
             .map_err(|e| {
-                BrowserError::HtmlExtractionError(format!("Failed to create client: {}", e))
+                BrowserError::HtmlExtractionError(format!("Failed to create client: {e}"))
             })?
             .capabilities(caps)
             .connect(&format!("http://localhost:{}", self.port))
