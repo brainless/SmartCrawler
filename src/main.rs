@@ -4,6 +4,11 @@ use tracing_subscriber;
 
 #[tokio::main]
 async fn main() {
+    // Initialize crypto provider for rustls
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("Failed to install default crypto provider");
+    
     tracing_subscriber::fmt::init();
 
     let args = match CliArgs::parse() {
