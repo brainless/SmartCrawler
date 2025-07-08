@@ -95,9 +95,7 @@ impl HtmlParser {
             if let Some(child_element) = ElementRef::wrap(child) {
                 let child_node = self.parse_element(child_element);
 
-                if !self.is_blank_node(&child_node)
-                    && !self.is_duplicate_node(&child_node, &children)
-                {
+                if !self.is_blank_node(&child_node) {
                     children.push(child_node);
                 }
             }
@@ -139,15 +137,6 @@ impl HtmlParser {
 
     fn is_blank_node(&self, node: &HtmlNode) -> bool {
         node.content.trim().is_empty() && node.children.is_empty()
-    }
-
-    fn is_duplicate_node(&self, node: &HtmlNode, existing_children: &[HtmlNode]) -> bool {
-        existing_children.iter().any(|existing| {
-            existing.tag == node.tag
-                && existing.classes == node.classes
-                && existing.id == node.id
-                && existing.content == node.content
-        })
     }
 
     pub fn filter_domain_duplicates(
