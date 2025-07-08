@@ -136,14 +136,28 @@ impl UrlStorage {
                 }
             }
 
-            // Mark nodes that appear in 2 or more pages as duplicates
+            // First pass: identify nodes that appear in 2 or more pages
+            let mut candidate_duplicates = HashSet::new();
+            for (signature, count) in node_occurrence_count {
+                if count >= 2 {
+                    candidate_duplicates.insert(signature);
+                }
+            }
+
+            // Second pass: verify path-based duplicates
             let domain_duplicates = self
                 .domain_duplicates
                 .entry(domain.to_string())
                 .or_default();
-            for (signature, count) in node_occurrence_count {
-                if count >= 2 {
-                    domain_duplicates.add_duplicate_node(signature);
+
+            for url_data in &completed_urls {
+                if let Some(html_tree) = &url_data.html_tree {
+                    Self::collect_path_based_duplicates(
+                        html_tree,
+                        &candidate_duplicates,
+                        &mut Vec::new(),
+                        domain_duplicates,
+                    );
                 }
             }
         }
@@ -162,6 +176,79 @@ impl UrlStorage {
         for child in &node.children {
             Self::collect_node_signatures(child, signatures);
         }
+    }
+
+    fn collect_path_based_duplicates(
+        node: &HtmlNode,
+        candidate_duplicates: &HashSet<NodeSignature>,
+        current_path: &mut Vec<NodeSignature>,
+        domain_duplicates: &mut DomainDuplicates,
+    ) {
+        // Skip structural/container elements that naturally appear on every page
+        if !Self::is_structural_element(&node.tag) {
+            let signature = NodeSignature::from_html_node(node);
+
+            // Only process meaningful nodes
+            if Self::is_meaningful_node(node) {
+                // Check if this node is a candidate duplicate
+                if candidate_duplicates.contains(&signature) {
+                    // Check if entire path consists of duplicates
+                    if Self::is_entire_path_duplicate(current_path, candidate_duplicates) {
+                        domain_duplicates.add_duplicate_node(signature.clone());
+                    }
+                }
+
+                // Add current node to path for processing children
+                current_path.push(signature.clone());
+
+                // Process children
+                for child in &node.children {
+                    Self::collect_path_based_duplicates(
+                        child,
+                        candidate_duplicates,
+                        current_path,
+                        domain_duplicates,
+                    );
+                }
+
+                // Remove current node from path (backtrack)
+                current_path.pop();
+            } else {
+                // For non-meaningful nodes, just process children without adding to path
+                for child in &node.children {
+                    Self::collect_path_based_duplicates(
+                        child,
+                        candidate_duplicates,
+                        current_path,
+                        domain_duplicates,
+                    );
+                }
+            }
+        } else {
+            // For structural elements, just process children without adding to path
+            for child in &node.children {
+                Self::collect_path_based_duplicates(
+                    child,
+                    candidate_duplicates,
+                    current_path,
+                    domain_duplicates,
+                );
+            }
+        }
+    }
+
+    fn is_entire_path_duplicate(
+        path: &[NodeSignature],
+        candidate_duplicates: &HashSet<NodeSignature>,
+    ) -> bool {
+        // A path is considered entirely duplicate if all nodes in the path are duplicates
+        // We allow empty paths (root elements) to be considered valid
+        if path.is_empty() {
+            return true;
+        }
+
+        // Check if all nodes in the path are candidate duplicates
+        path.iter().all(|sig| candidate_duplicates.contains(sig))
     }
 
     fn is_structural_element(tag: &str) -> bool {
@@ -371,6 +458,259 @@ mod tests {
 
         // sig1 and sig3 should be identical
         assert_eq!(sig1.content_hash, sig3.content_hash);
+    }
+
+    #[test]
+    fn test_path_based_duplicate_detection_basic() {
+        use crate::html_parser::HtmlParser;
+
+        let mut storage = UrlStorage::new();
+        let parser = HtmlParser::new();
+
+        storage.add_url("https://example.com/page1".to_string());
+        storage.add_url("https://example.com/page2".to_string());
+
+        // Create HTML trees where both nav and its child link are duplicates
+        let html1 = r#"<html><body>
+            <nav class="navbar">
+                <a href="/home" class="nav-link">Home</a>
+            </nav>
+            <div class="content">Page 1 unique content</div>
+        </body></html>"#;
+
+        let html2 = r#"<html><body>
+            <nav class="navbar">
+                <a href="/home" class="nav-link">Home</a>
+            </nav>
+            <div class="content">Page 2 unique content</div>
+        </body></html>"#;
+
+        let tree1 = parser.parse(html1);
+        let tree2 = parser.parse(html2);
+
+        // Set the HTML data for both URLs
+        if let Some(url_data) = storage.get_url_data_mut("https://example.com/page1") {
+            url_data.set_html_data(html1.to_string(), tree1.clone(), Some("Page 1".to_string()));
+            url_data.update_status(FetchStatus::Success);
+        }
+
+        if let Some(url_data) = storage.get_url_data_mut("https://example.com/page2") {
+            url_data.set_html_data(html2.to_string(), tree2.clone(), Some("Page 2".to_string()));
+            url_data.update_status(FetchStatus::Success);
+        }
+
+        // Analyze domain duplicates with path-based logic
+        storage.analyze_domain_duplicates("example.com");
+
+        let duplicates = storage.get_domain_duplicates("example.com");
+        assert!(duplicates.is_some());
+
+        let duplicates = duplicates.unwrap();
+
+        // Both nav and the link should be marked as duplicates since entire path is duplicate
+        assert!(duplicates.get_duplicate_count() > 0);
+
+        // Verify that the nav signature is marked as duplicate
+        let nav_signature = NodeSignature::from_html_node(&tree1.children[0].children[0]); // nav element
+        assert!(duplicates.is_duplicate(&nav_signature));
+
+        // Verify that the link inside nav is also marked as duplicate
+        let link_signature =
+            NodeSignature::from_html_node(&tree1.children[0].children[0].children[0]); // a element
+        assert!(duplicates.is_duplicate(&link_signature));
+    }
+
+    #[test]
+    fn test_path_based_duplicate_detection_partial_path() {
+        use crate::html_parser::HtmlParser;
+
+        let mut storage = UrlStorage::new();
+        let parser = HtmlParser::new();
+
+        storage.add_url("https://example.com/page1".to_string());
+        storage.add_url("https://example.com/page2".to_string());
+
+        // Create HTML trees where nav is duplicate but inner content is different
+        let html1 = r#"<html><body>
+            <nav class="navbar">
+                <a href="/home" class="nav-link">Home</a>
+            </nav>
+            <div class="content">
+                <nav class="sidebar">
+                    <a href="/about" class="sidebar-link">About</a>
+                </nav>
+            </div>
+        </body></html>"#;
+
+        let html2 = r#"<html><body>
+            <nav class="navbar">
+                <a href="/home" class="nav-link">Home</a>
+            </nav>
+            <div class="content">
+                <nav class="sidebar">
+                    <a href="/contact" class="sidebar-link">Contact</a>
+                </nav>
+            </div>
+        </body></html>"#;
+
+        let tree1 = parser.parse(html1);
+        let tree2 = parser.parse(html2);
+
+        // Set the HTML data for both URLs
+        if let Some(url_data) = storage.get_url_data_mut("https://example.com/page1") {
+            url_data.set_html_data(html1.to_string(), tree1.clone(), Some("Page 1".to_string()));
+            url_data.update_status(FetchStatus::Success);
+        }
+
+        if let Some(url_data) = storage.get_url_data_mut("https://example.com/page2") {
+            url_data.set_html_data(html2.to_string(), tree2.clone(), Some("Page 2".to_string()));
+            url_data.update_status(FetchStatus::Success);
+        }
+
+        // Analyze domain duplicates with path-based logic
+        storage.analyze_domain_duplicates("example.com");
+
+        let duplicates = storage.get_domain_duplicates("example.com");
+        assert!(duplicates.is_some());
+
+        let duplicates = duplicates.unwrap();
+
+        // The top-level nav should be marked as duplicate
+        let top_nav_signature = NodeSignature::from_html_node(&tree1.children[0].children[0]); // first nav
+        assert!(duplicates.is_duplicate(&top_nav_signature));
+
+        // The link inside the top nav should also be duplicate (full path is duplicate)
+        let top_link_signature =
+            NodeSignature::from_html_node(&tree1.children[0].children[0].children[0]); // first a
+        assert!(duplicates.is_duplicate(&top_link_signature));
+
+        // The sidebar nav should NOT be marked as duplicate because the children are different
+        let sidebar_nav_signature =
+            NodeSignature::from_html_node(&tree1.children[0].children[1].children[0]); // sidebar nav
+        assert!(!duplicates.is_duplicate(&sidebar_nav_signature));
+
+        // The link inside the sidebar nav should NOT be marked as duplicate because
+        // although the parent (sidebar nav) is duplicate, the link content differs
+        let sidebar_link_signature =
+            NodeSignature::from_html_node(&tree1.children[0].children[1].children[0].children[0]); // sidebar a
+        assert!(!duplicates.is_duplicate(&sidebar_link_signature));
+    }
+
+    #[test]
+    fn test_path_based_duplicate_detection_no_duplicates() {
+        use crate::html_parser::HtmlParser;
+
+        let mut storage = UrlStorage::new();
+        let parser = HtmlParser::new();
+
+        storage.add_url("https://example.com/page1".to_string());
+        storage.add_url("https://example.com/page2".to_string());
+
+        // Create HTML trees with completely different structures
+        let html1 = r#"<html><body>
+            <header class="main-header">
+                <h1>Page 1 Title</h1>
+            </header>
+            <div class="content">Page 1 content</div>
+        </body></html>"#;
+
+        let html2 = r#"<html><body>
+            <nav class="navigation">
+                <a href="/home">Home</a>
+            </nav>
+            <div class="main">Page 2 content</div>
+        </body></html>"#;
+
+        let tree1 = parser.parse(html1);
+        let tree2 = parser.parse(html2);
+
+        // Set the HTML data for both URLs
+        if let Some(url_data) = storage.get_url_data_mut("https://example.com/page1") {
+            url_data.set_html_data(html1.to_string(), tree1.clone(), Some("Page 1".to_string()));
+            url_data.update_status(FetchStatus::Success);
+        }
+
+        if let Some(url_data) = storage.get_url_data_mut("https://example.com/page2") {
+            url_data.set_html_data(html2.to_string(), tree2.clone(), Some("Page 2".to_string()));
+            url_data.update_status(FetchStatus::Success);
+        }
+
+        // Analyze domain duplicates with path-based logic
+        storage.analyze_domain_duplicates("example.com");
+
+        let duplicates = storage.get_domain_duplicates("example.com");
+        assert!(duplicates.is_some());
+
+        let duplicates = duplicates.unwrap();
+
+        // No duplicates should be found since structures are completely different
+        assert_eq!(duplicates.get_duplicate_count(), 0);
+    }
+
+    #[test]
+    fn test_is_entire_path_duplicate() {
+        let mut candidate_duplicates = HashSet::new();
+
+        let sig1 = NodeSignature {
+            tag: "nav".to_string(),
+            classes: vec!["navbar".to_string()],
+            id: None,
+            content: "".to_string(),
+            content_hash: "hash1".to_string(),
+        };
+
+        let sig2 = NodeSignature {
+            tag: "a".to_string(),
+            classes: vec!["nav-link".to_string()],
+            id: None,
+            content: "Home".to_string(),
+            content_hash: "hash2".to_string(),
+        };
+
+        let sig3 = NodeSignature {
+            tag: "div".to_string(),
+            classes: vec!["unique".to_string()],
+            id: None,
+            content: "Not duplicate".to_string(),
+            content_hash: "hash3".to_string(),
+        };
+
+        candidate_duplicates.insert(sig1.clone());
+        candidate_duplicates.insert(sig2.clone());
+
+        // Test empty path (should be true)
+        assert!(UrlStorage::is_entire_path_duplicate(
+            &[],
+            &candidate_duplicates
+        ));
+
+        // Test path with all duplicates
+        let all_duplicate_path = vec![sig1.clone(), sig2.clone()];
+        assert!(UrlStorage::is_entire_path_duplicate(
+            &all_duplicate_path,
+            &candidate_duplicates
+        ));
+
+        // Test path with one non-duplicate
+        let mixed_path = vec![sig1.clone(), sig3.clone()];
+        assert!(!UrlStorage::is_entire_path_duplicate(
+            &mixed_path,
+            &candidate_duplicates
+        ));
+
+        // Test path with single duplicate
+        let single_duplicate_path = vec![sig1.clone()];
+        assert!(UrlStorage::is_entire_path_duplicate(
+            &single_duplicate_path,
+            &candidate_duplicates
+        ));
+
+        // Test path with single non-duplicate
+        let single_non_duplicate_path = vec![sig3.clone()];
+        assert!(!UrlStorage::is_entire_path_duplicate(
+            &single_non_duplicate_path,
+            &candidate_duplicates
+        ));
     }
 }
 
