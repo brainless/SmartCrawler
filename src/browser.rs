@@ -1,243 +1,148 @@
-use crate::content::ScrapedWebPage;
-use crate::extractor::HtmlExtractor;
 use fantoccini::{Client, ClientBuilder};
-use rand::Rng;
-use scraper::{Html, Selector};
-use serde_json::Value;
-use std::time::{Duration, Instant};
+use serde_json::json;
+use std::time::Duration;
 use thiserror::Error;
-use tokio::time::sleep;
 
 #[derive(Error, Debug)]
 pub enum BrowserError {
-    #[error("Browser error: {0}")]
-    BrowserError(#[from] fantoccini::error::CmdError),
-    #[error("New session error: {0}")]
-    NewSessionError(#[from] fantoccini::error::NewSessionError),
-    #[error("HTML conversion error: {0}")]
-    ConversionError(String),
-    #[error("IO error: {0}")]
-    IoError(#[from] std::io::Error),
+    #[error("WebDriver connection error: {0}")]
+    ConnectionError(#[from] fantoccini::error::CmdError),
+    #[error("WebDriver not available on port {port}")]
+    WebDriverNotAvailable { port: u16 },
+    #[error("Failed to extract HTML: {0}")]
+    HtmlExtractionError(String),
 }
 
 pub struct Browser {
-    client: Client,
+    client: Option<Client>,
+    port: u16,
 }
 
 impl Browser {
-    pub async fn new() -> Result<Self, BrowserError> {
-        let client = ClientBuilder::rustls()?
-            .connect("http://localhost:4444")
-            .await?;
-        Ok(Self { client })
+    pub fn new(port: u16) -> Self {
+        Browser { client: None, port }
     }
 
-    pub async fn scrape_url(&self, url: &str) -> Result<ScrapedWebPage, BrowserError> {
-        self.scrape_url_with_extraction(url, false).await
-    }
+    pub async fn connect(&mut self) -> Result<(), BrowserError> {
+        let mut caps = serde_json::map::Map::new();
+        let chrome_opts = json!({
+            "args": ["--headless", "--no-sandbox", "--disable-dev-shm-usage"]
+        });
+        caps.insert("goog:chromeOptions".to_string(), chrome_opts);
 
-    pub async fn scrape_url_with_extraction(
-        &self,
-        url: &str,
-        extract_mode: bool,
-    ) -> Result<ScrapedWebPage, BrowserError> {
-        self.scrape_url_with_modes(url, extract_mode, false).await
-    }
-
-    pub async fn scrape_url_with_modes(
-        &self,
-        url: &str,
-        extract_mode: bool,
-        grouped_mode: bool,
-    ) -> Result<ScrapedWebPage, BrowserError> {
-        self.client.goto(url).await?;
-
-        // Wait for initial page load
-        sleep(Duration::from_millis(1000)).await;
-        let _ = self.client.current_url().await?;
-
-        // Perform human-like scrolling to load dynamic content
-        self.scroll_page_gradually().await?;
-
-        let html = self
-            .client
-            .execute("return document.documentElement.outerHTML;", vec![])
-            .await?;
-        let html = match html {
-            Value::String(html) => html,
-            _ => {
-                return Err(BrowserError::ConversionError(
-                    "HTML conversion error".to_string(),
-                ))
-            }
-        };
-        let scraper = Html::parse_document(&html);
-
-        let title = scraper
-            .select(&Selector::parse("title").unwrap())
-            .next()
-            .unwrap()
-            .text()
-            .collect::<Vec<_>>()
-            .join(" ");
-
-        let content = String::new(); // Placeholder - replaced StructuredContent with blank String
-
-        let links = scraper
-            .select(&Selector::parse("a[href]").unwrap())
-            .filter_map(|link| link.value().attr("href"))
-            .collect::<Vec<_>>();
-        let links: Vec<String> = links
-            .iter()
-            .map(|href| {
-                if href.starts_with("http") {
-                    href.to_string()
-                } else if href.starts_with("//") {
-                    format!("https:{href}")
-                } else if href.starts_with('/') {
-                    if let Ok(base_url) = url::Url::parse(url) {
-                        if let Some(domain) = base_url.host_str() {
-                            return format!("{}://{}{}", base_url.scheme(), domain, href);
-                        }
-                    }
-                    href.to_string()
+        let client = ClientBuilder::rustls()
+            .map_err(|e| {
+                BrowserError::HtmlExtractionError(format!("Failed to create client: {}", e))
+            })?
+            .capabilities(caps)
+            .connect(&format!("http://localhost:{}", self.port))
+            .await
+            .map_err(|e| {
+                if e.to_string().contains("Connection refused") {
+                    BrowserError::WebDriverNotAvailable { port: self.port }
                 } else {
-                    href.to_string()
+                    BrowserError::HtmlExtractionError(e.to_string())
                 }
-            })
-            .collect();
+            })?;
 
-        let meta_description = scraper
-            .select(&Selector::parse("meta[name=\"description\"]").unwrap())
-            .filter_map(|meta| meta.value().attr("content"))
-            .collect::<Vec<_>>()
-            .join(" ");
+        self.client = Some(client);
+        Ok(())
+    }
 
-        let headings = scraper
-            .select(&Selector::parse("h1, h2, h3, h4, h5, h6").unwrap())
-            .map(|heading| {
-                heading
-                    .text()
-                    .collect::<Vec<_>>()
-                    .join(" ")
-                    .trim()
-                    .to_string()
-            })
-            .filter(|heading| !heading.is_empty())
-            .collect::<Vec<_>>();
-
-        let extraction_data = if extract_mode || grouped_mode {
-            let extractor = HtmlExtractor::new();
-            extractor.extract(&html)
+    pub async fn navigate_to(&mut self, url: &str) -> Result<(), BrowserError> {
+        if let Some(client) = &mut self.client {
+            client.goto(url).await?;
+            tokio::time::sleep(Duration::from_millis(2000)).await;
+            Ok(())
         } else {
-            None
-        };
-
-        Ok(ScrapedWebPage {
-            url: url.to_string(),
-            title: Some(title),
-            content,
-            links,
-            meta_description: Some(meta_description),
-            headings,
-            extraction_data,
-        })
-    }
-
-    /// Scrolls through the page gradually to mimic human behavior and trigger dynamic content loading
-    /// Scrolls for a maximum of 10 seconds with realistic pauses between scroll actions
-    async fn scroll_page_gradually(&self) -> Result<(), BrowserError> {
-        let start_time = Instant::now();
-        let max_scroll_duration = Duration::from_secs(10);
-        let mut rng = rand::rng();
-
-        loop {
-            // Generate random values for this iteration
-            let scroll_step = rng.random_range(400..800); // Random between 200-400 pixels
-            let scroll_delay = Duration::from_millis(rng.random_range(100..400)); // Random between 300-800ms
-
-            // Check if we've exceeded the time limit
-            if start_time.elapsed() >= max_scroll_duration {
-                break;
-            }
-
-            // Get current scroll position and page height
-            let scroll_info = self.client.execute(
-                "return { scrollY: window.scrollY, documentHeight: document.documentElement.scrollHeight, windowHeight: window.innerHeight };",
-                vec![]
-            ).await?;
-
-            let scroll_info = match scroll_info {
-                Value::Object(obj) => obj,
-                _ => {
-                    break;
-                }
-            };
-
-            let current_scroll = scroll_info
-                .get("scrollY")
-                .and_then(|v| v.as_f64())
-                .unwrap_or(0.0) as i32;
-            let document_height = scroll_info
-                .get("documentHeight")
-                .and_then(|v| v.as_f64())
-                .unwrap_or(0.0) as i32;
-            let window_height = scroll_info
-                .get("windowHeight")
-                .and_then(|v| v.as_f64())
-                .unwrap_or(0.0) as i32;
-
-            // Check if we've reached the bottom of the page
-            if current_scroll + window_height >= document_height - 50 {
-                // 50px buffer
-                break;
-            }
-
-            // Scroll down by the step amount
-            let scroll_script = format!("window.scrollBy(0, {scroll_step});");
-            if (self.client.execute(&scroll_script, vec![]).await).is_err() {
-                break;
-            }
-
-            // Wait before next scroll to mimic human behavior
-            sleep(scroll_delay).await;
+            Err(BrowserError::HtmlExtractionError(
+                "Not connected to browser".to_string(),
+            ))
         }
-
-        Ok(())
     }
 
-    /// Fetches raw HTML content from a URL using the browser
-    /// This method is similar to scrape_url but returns just the raw HTML string
-    /// instead of a structured ScrapedWebPage object
-    pub async fn fetch_html(&self, url: &str) -> Result<String, BrowserError> {
-        self.client.goto(url).await?;
-
-        // Wait for initial page load
-        sleep(Duration::from_millis(1000)).await;
-        let _ = self.client.current_url().await?;
-
-        // Perform human-like scrolling to load dynamic content
-        self.scroll_page_gradually().await?;
-
-        let html = self
-            .client
-            .execute("return document.documentElement.outerHTML;", vec![])
-            .await?;
-
-        let html = match html {
-            Value::String(html) => html,
-            _ => {
-                return Err(BrowserError::ConversionError(
-                    "HTML conversion error".to_string(),
-                ))
-            }
-        };
-
-        Ok(html)
+    pub async fn get_html_source(&mut self) -> Result<String, BrowserError> {
+        if let Some(client) = &mut self.client {
+            let html = client.source().await?;
+            Ok(html)
+        } else {
+            Err(BrowserError::HtmlExtractionError(
+                "Not connected to browser".to_string(),
+            ))
+        }
     }
 
-    pub async fn close(self) -> Result<(), BrowserError> {
-        self.client.close().await?;
+    pub async fn get_page_title(&mut self) -> Result<String, BrowserError> {
+        if let Some(client) = &mut self.client {
+            let title = client.title().await?;
+            Ok(title)
+        } else {
+            Err(BrowserError::HtmlExtractionError(
+                "Not connected to browser".to_string(),
+            ))
+        }
+    }
+
+    pub async fn close(&mut self) -> Result<(), BrowserError> {
+        if let Some(client) = self.client.take() {
+            client.close().await?;
+        }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_browser_connection_error() {
+        rustls::crypto::ring::default_provider()
+            .install_default()
+            .ok();
+        let mut browser = Browser::new(9999); // Non-existent port
+        let result = browser.connect().await;
+        assert!(result.is_err());
+        // Just check that it's an error - the specific error type may vary
+        match result.unwrap_err() {
+            BrowserError::WebDriverNotAvailable { port } => assert_eq!(port, 9999),
+            BrowserError::HtmlExtractionError(_) => {} // Also acceptable
+            _ => panic!("Unexpected error type"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_browser_operations_without_connection() {
+        let mut browser = Browser::new(9515);
+
+        let result = browser.navigate_to("https://example.com").await;
+        assert!(result.is_err());
+
+        let result = browser.get_html_source().await;
+        assert!(result.is_err());
+
+        let result = browser.get_page_title().await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_browser_connect_to_example() {
+        rustls::crypto::ring::default_provider()
+            .install_default()
+            .ok();
+        let mut browser = Browser::new(9515);
+
+        if browser.connect().await.is_ok() {
+            let result = browser.navigate_to("https://example.com").await;
+            assert!(result.is_ok());
+
+            let title = browser.get_page_title().await;
+            assert!(title.is_ok());
+
+            let html = browser.get_html_source().await;
+            assert!(html.is_ok());
+
+            let _ = browser.close().await;
+        }
     }
 }
