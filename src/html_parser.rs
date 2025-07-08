@@ -67,7 +67,7 @@ impl HtmlNode {
         }
 
         let current_part = path_parts[depth];
-        
+
         // Check if current node matches the current path part
         if self.matches_path_part(current_part) {
             if depth == path_parts.len() - 1 {
@@ -93,9 +93,12 @@ impl HtmlNode {
             let tag = &part[..dot_pos];
             let classes_str = &part[dot_pos + 1..];
             let required_classes: Vec<&str> = classes_str.split('.').collect();
-            
+
             // Check tag matches and all required classes are present
-            self.tag == tag && required_classes.iter().all(|class| self.classes.contains(&class.to_string()))
+            self.tag == tag
+                && required_classes
+                    .iter()
+                    .all(|class| self.classes.contains(&class.to_string()))
         } else {
             // Just a tag name
             self.tag == part
@@ -450,7 +453,9 @@ mod tests {
         let tree = parser.parse(html);
 
         // Test finding elements by path
-        let results = tree.find_by_path("html body center table tbody tr td table tbody tr.athing.submission td.title");
+        let results = tree.find_by_path(
+            "html body center table tbody tr td table tbody tr.athing.submission td.title",
+        );
         assert_eq!(results.len(), 2);
         assert_eq!(results[0].content, "First Item");
         assert_eq!(results[1].content, "Second Item");
@@ -478,11 +483,11 @@ mod tests {
         assert!(node.matches_path_part("tr.athing.submission"));
         assert!(node.matches_path_part("tr.athing"));
         assert!(node.matches_path_part("tr"));
-        
+
         // Test non-matching
         assert!(!node.matches_path_part("td.athing"));
         assert!(!node.matches_path_part("tr.nonexistent"));
-        
+
         // Test simple tag matching
         let simple_node = HtmlNode::new("div".to_string(), vec![], None, String::new());
         assert!(simple_node.matches_path_part("div"));
