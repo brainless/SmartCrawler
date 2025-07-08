@@ -20,7 +20,13 @@ pub fn extract_domain_from_url(url: &str) -> Option<String> {
 }
 
 pub fn construct_root_url(domain: &str) -> String {
-    format!("https://{domain}")
+    let url_string = format!("https://{domain}");
+    // Normalize the URL the same way CLI does to ensure consistency
+    if let Ok(parsed) = url::Url::parse(&url_string) {
+        parsed.to_string()
+    } else {
+        url_string
+    }
 }
 
 pub fn is_root_url(url: &str) -> bool {
@@ -66,11 +72,26 @@ mod tests {
 
     #[test]
     fn test_construct_root_url() {
-        assert_eq!(construct_root_url("example.com"), "https://example.com");
+        assert_eq!(construct_root_url("example.com"), "https://example.com/");
         assert_eq!(
             construct_root_url("subdomain.example.com"),
-            "https://subdomain.example.com"
+            "https://subdomain.example.com/"
         );
+    }
+
+    #[test]
+    fn test_construct_root_url_matches_cli_normalization() {
+        // Test that construct_root_url produces URLs that match CLI normalization
+        // This prevents duplicate loading when user provides URLs with trailing slashes
+        let domain = "news.ycombinator.com";
+        let constructed_root = construct_root_url(domain);
+
+        // Simulate what CLI normalization does for user input with trailing slash
+        let user_input = "https://news.ycombinator.com/";
+        let cli_normalized = url::Url::parse(user_input).unwrap().to_string();
+
+        assert_eq!(constructed_root, cli_normalized);
+        assert_eq!(constructed_root, "https://news.ycombinator.com/");
     }
 
     #[test]
