@@ -42,6 +42,65 @@ impl HtmlNode {
 
         None
     }
+
+    /// Find elements by CSS-like path (ignoring IDs)
+    /// Example: "html body center table tbody tr td table tbody tr.athing.submission td.title"
+    pub fn find_by_path(&self, path: &str) -> Vec<&HtmlNode> {
+        let path_parts: Vec<&str> = path.split_whitespace().collect();
+        if path_parts.is_empty() {
+            return vec![];
+        }
+
+        let mut results = Vec::new();
+        self.find_by_path_recursive(&path_parts, 0, &mut results);
+        results
+    }
+
+    fn find_by_path_recursive<'a>(
+        &'a self,
+        path_parts: &[&str],
+        depth: usize,
+        results: &mut Vec<&'a HtmlNode>,
+    ) {
+        if depth >= path_parts.len() {
+            return;
+        }
+
+        let current_part = path_parts[depth];
+        
+        // Check if current node matches the current path part
+        if self.matches_path_part(current_part) {
+            if depth == path_parts.len() - 1 {
+                // This is the final part, add to results
+                results.push(self);
+            } else {
+                // Continue searching in children for the next part
+                for child in &self.children {
+                    child.find_by_path_recursive(path_parts, depth + 1, results);
+                }
+            }
+        }
+
+        // Also check children for the current part (to handle non-matching intermediate nodes)
+        for child in &self.children {
+            child.find_by_path_recursive(path_parts, depth, results);
+        }
+    }
+
+    fn matches_path_part(&self, part: &str) -> bool {
+        // Parse part like "tr.athing.submission" or just "td"
+        if let Some(dot_pos) = part.find('.') {
+            let tag = &part[..dot_pos];
+            let classes_str = &part[dot_pos + 1..];
+            let required_classes: Vec<&str> = classes_str.split('.').collect();
+            
+            // Check tag matches and all required classes are present
+            self.tag == tag && required_classes.iter().all(|class| self.classes.contains(&class.to_string()))
+        } else {
+            // Just a tag name
+            self.tag == part
+        }
+    }
 }
 
 pub struct HtmlParser {
@@ -359,5 +418,74 @@ mod tests {
         assert!(parser.is_same_domain("https://sub.example.com/page", "example.com"));
         assert!(!parser.is_same_domain("https://other.com/page", "example.com"));
         assert!(!parser.is_same_domain("https://notexample.com/page", "example.com"));
+    }
+
+    #[test]
+    fn test_find_by_path() {
+        let parser = HtmlParser::new();
+        let html = r#"<html>
+            <body>
+                <center>
+                    <table>
+                        <tbody>
+                            <tr>
+                                <td>
+                                    <table>
+                                        <tbody>
+                                            <tr class="athing submission">
+                                                <td class="title">First Item</td>
+                                            </tr>
+                                            <tr class="athing submission">
+                                                <td class="title">Second Item</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </center>
+            </body>
+        </html>"#;
+        let tree = parser.parse(html);
+
+        // Test finding elements by path
+        let results = tree.find_by_path("html body center table tbody tr td table tbody tr.athing.submission td.title");
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].content, "First Item");
+        assert_eq!(results[1].content, "Second Item");
+
+        // Test finding by simple tag path
+        let body_results = tree.find_by_path("html body");
+        assert_eq!(body_results.len(), 1);
+        assert_eq!(body_results[0].tag, "body");
+
+        // Test non-existent path
+        let empty_results = tree.find_by_path("html body div.nonexistent");
+        assert_eq!(empty_results.len(), 0);
+    }
+
+    #[test]
+    fn test_matches_path_part() {
+        let node = HtmlNode::new(
+            "tr".to_string(),
+            vec!["athing".to_string(), "submission".to_string()],
+            None,
+            String::new(),
+        );
+
+        // Test matching with classes
+        assert!(node.matches_path_part("tr.athing.submission"));
+        assert!(node.matches_path_part("tr.athing"));
+        assert!(node.matches_path_part("tr"));
+        
+        // Test non-matching
+        assert!(!node.matches_path_part("td.athing"));
+        assert!(!node.matches_path_part("tr.nonexistent"));
+        
+        // Test simple tag matching
+        let simple_node = HtmlNode::new("div".to_string(), vec![], None, String::new());
+        assert!(simple_node.matches_path_part("div"));
+        assert!(!simple_node.matches_path_part("span"));
     }
 }
