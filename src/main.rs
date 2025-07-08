@@ -124,11 +124,18 @@ async fn main() {
     for domain in domain_urls.keys() {
         storage.analyze_domain_duplicates(domain);
         if let Some(duplicates) = storage.get_domain_duplicates(domain) {
-            info!(
-                "Found {} duplicate node patterns for domain {}",
-                duplicates.get_duplicate_count(),
-                domain
-            );
+            let duplicate_count = duplicates.get_duplicate_count();
+            if duplicate_count > 0 {
+                info!(
+                    "Found {} duplicate node patterns for domain {}",
+                    duplicate_count, domain
+                );
+            } else {
+                info!(
+                    "No duplicate patterns found for domain {} (likely insufficient pages)",
+                    domain
+                );
+            }
         }
     }
 
@@ -151,7 +158,7 @@ async fn main() {
                     if let Some(domain_duplicates) = storage.get_domain_duplicates(&url_data.domain)
                     {
                         let filtered_tree =
-                            parser.filter_domain_duplicates(html_tree, domain_duplicates);
+                            HtmlParser::filter_domain_duplicates(html_tree, domain_duplicates);
                         println!("Filtered HTML Tree:");
                         print_html_tree(&filtered_tree, 0);
                     } else {

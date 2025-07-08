@@ -147,16 +147,40 @@ impl UrlStorage {
         }
     }
 
-    fn collect_node_signatures(
-        node: &HtmlNode,
-        signatures: &mut HashMap<NodeSignature, usize>,
-    ) {
-        let signature = NodeSignature::from_html_node(node);
-        *signatures.entry(signature).or_insert(0) += 1;
+    fn collect_node_signatures(node: &HtmlNode, signatures: &mut HashMap<NodeSignature, usize>) {
+        // Skip structural/container elements that naturally appear on every page
+        if !Self::is_structural_element(&node.tag) {
+            let signature = NodeSignature::from_html_node(node);
+            // Only count nodes with meaningful content or specific styling
+            if Self::is_meaningful_node(node) {
+                *signatures.entry(signature).or_insert(0) += 1;
+            }
+        }
 
         for child in &node.children {
             Self::collect_node_signatures(child, signatures);
         }
+    }
+
+    fn is_structural_element(tag: &str) -> bool {
+        matches!(
+            tag,
+            "html" | "head" | "body" | "main" | "article" | "section"
+        )
+    }
+
+    fn is_meaningful_node(node: &HtmlNode) -> bool {
+        // Consider a node meaningful if it has:
+        // - Non-empty content, OR
+        // - Specific CSS classes/IDs that indicate styling, OR
+        // - Is a semantic element with attributes
+        !node.content.trim().is_empty()
+            || !node.classes.is_empty()
+            || node.id.is_some()
+            || matches!(
+                node.tag.as_str(),
+                "nav" | "header" | "footer" | "aside" | "form" | "button" | "a"
+            )
     }
 
     pub fn get_domain_duplicates(&self, domain: &str) -> Option<&DomainDuplicates> {

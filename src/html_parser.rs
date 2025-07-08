@@ -151,41 +151,30 @@ impl HtmlParser {
     }
 
     pub fn filter_domain_duplicates(
-        &self,
         node: &HtmlNode,
         domain_duplicates: &DomainDuplicates,
     ) -> HtmlNode {
         let signature = NodeSignature::from_html_node(node);
 
-        if domain_duplicates.is_duplicate(&signature) {
-            // Return an empty placeholder node for duplicates
-            return HtmlNode::new(
-                "filtered".to_string(),
-                vec![],
-                None,
-                "[duplicate content filtered]".to_string(),
-            );
-        }
-
+        // Create the filtered node structure
         let mut filtered_node = HtmlNode::new(
             node.tag.clone(),
             node.classes.clone(),
             node.id.clone(),
-            node.content.clone(),
+            if domain_duplicates.is_duplicate(&signature) {
+                "[FILTERED DUPLICATE]".to_string()
+            } else {
+                node.content.clone()
+            },
         );
 
+        // Always process children to maintain structure
         for child in &node.children {
-            let filtered_child = self.filter_domain_duplicates(child, domain_duplicates);
-            if !self.is_filtered_placeholder(&filtered_child) {
-                filtered_node.add_child(filtered_child);
-            }
+            let filtered_child = Self::filter_domain_duplicates(child, domain_duplicates);
+            filtered_node.add_child(filtered_child);
         }
 
         filtered_node
-    }
-
-    fn is_filtered_placeholder(&self, node: &HtmlNode) -> bool {
-        node.tag == "filtered" && node.content == "[duplicate content filtered]"
     }
 
     pub fn extract_links(&self, html: &str, base_domain: &str) -> Vec<String> {
@@ -361,15 +350,17 @@ mod tests {
         };
         duplicates.add_duplicate_node(nav_signature);
 
-        let filtered = parser.filter_domain_duplicates(&node, &duplicates);
+        let filtered = HtmlParser::filter_domain_duplicates(&node, &duplicates);
 
-        // The nav element should be filtered out
+        // The structure should be preserved, but nav content should be marked as filtered
         assert_eq!(filtered.tag, "html");
         let body = &filtered.children[0];
         assert_eq!(body.tag, "body");
-        assert_eq!(body.children.len(), 1); // Only the div should remain
-        assert_eq!(body.children[0].tag, "div");
-        assert_eq!(body.children[0].classes, vec!["content"]);
+        assert_eq!(body.children.len(), 2); // Both nav and div should remain
+        assert_eq!(body.children[0].tag, "nav");
+        assert_eq!(body.children[0].content, "[FILTERED DUPLICATE]");
+        assert_eq!(body.children[1].tag, "div");
+        assert_eq!(body.children[1].content, "Main content");
     }
 
     #[test]
