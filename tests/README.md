@@ -29,7 +29,7 @@ docker run -d -p 4444:4444 selenium/standalone-chrome:latest
 The real-world tests are ignored by default to prevent them from running during normal development. To run them explicitly:
 
 ```bash
-# Run all real-world tests
+# Run all real-world tests (they run serially to avoid WebDriver conflicts)
 cargo test real_world -- --ignored
 
 # Run a specific test
@@ -39,6 +39,15 @@ cargo test test_mykin_ai_team_member -- --ignored
 # Test WebDriver connection
 cargo test test_webdriver_connection -- --ignored
 ```
+
+### Serial Execution
+
+**Important**: Real-world tests are configured to run serially (one at a time) using the `serial_test` crate. This prevents WebDriver session conflicts that occur when multiple tests try to use the same WebDriver port (4444) simultaneously.
+
+The `#[serial]` attribute ensures that:
+- Tests won't interfere with each other's WebDriver sessions
+- Each test gets exclusive access to the WebDriver instance
+- Tests are more reliable and predictable
 
 ## Test Descriptions
 
@@ -72,3 +81,4 @@ If a test fails, you should manually verify the webpage structure:
   - WebDriver is not running or accessible
 - Element IDs are ignored in path matching to make tests more robust against dynamic content
 - Tests include verbose output to help with debugging when they fail
+- **Serial execution**: Tests run one at a time to prevent WebDriver session conflicts - this is automatic and requires no special flags

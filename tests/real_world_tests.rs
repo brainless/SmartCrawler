@@ -1,4 +1,5 @@
 use smart_crawler::{Browser, HtmlParser, UrlStorage, FetchStatus};
+use serial_test::serial;
 use tokio;
 
 /// Helper function to process a URL and return the parsed HTML tree
@@ -38,6 +39,7 @@ async fn crawl_and_parse(url: &str) -> Result<smart_crawler::HtmlNode, String> {
 
 #[tokio::test]
 #[ignore] // Ignored by default, run with: cargo test real_world -- --ignored
+#[serial]
 async fn test_hacker_news_submissions() {
     println!("Testing Hacker News for 30 submission elements...");
     
@@ -74,6 +76,7 @@ async fn test_hacker_news_submissions() {
 
 #[tokio::test]
 #[ignore] // Ignored by default, run with: cargo test real_world -- --ignored
+#[serial]
 async fn test_mykin_ai_team_member() {
     println!("Testing Mykin.ai for Kasper Juul team member...");
     
@@ -113,6 +116,7 @@ async fn test_mykin_ai_team_member() {
 
 #[tokio::test]
 #[ignore] // Ignored by default
+#[serial]
 async fn test_webdriver_connection() {
     println!("Testing WebDriver connection...");
     
