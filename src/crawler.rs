@@ -785,67 +785,149 @@ impl SmartCrawler {
 
         tracing::info!("Analyzing {} provided URLs", links.len());
 
-        // Analyze each provided URL
+        // Group links by domain to ensure proper duplicate detection per domain
+        let mut links_by_domain = HashMap::new();
         for url in &links {
-            if objective_met {
-                // Ask user if they want to continue
-                println!("\nObjective has been met! Current analysis:");
-                for entry in &analysis {
-                    println!("{entry}");
+            let domain = if let Ok(parsed) = url::Url::parse(url) {
+                parsed.host_str().unwrap_or("unknown").to_string()
+            } else {
+                "unknown".to_string()
+            };
+            links_by_domain
+                .entry(domain)
+                .or_insert_with(Vec::new)
+                .push(url.clone());
+        }
+
+        // Process each domain's links
+        for (domain, domain_links) in links_by_domain {
+            tracing::info!(
+                "Processing {} links for domain: {}",
+                domain_links.len(),
+                domain
+            );
+
+            // Analyze each provided URL for this domain
+            for url in &domain_links {
+                if objective_met {
+                    // Ask user if they want to continue
+                    println!("\nObjective has been met! Current analysis:");
+                    for entry in &analysis {
+                        println!("{entry}");
+                    }
+
+                    print!("\nContinue analyzing remaining URLs? (y/N): ");
+                    std::io::stdout().flush().unwrap();
+
+                    let mut input = String::new();
+                    std::io::stdin().read_line(&mut input).unwrap();
+                    let continue_crawling = input.trim().to_lowercase() == "y";
+
+                    if !continue_crawling {
+                        break;
+                    }
                 }
 
-                print!("\nContinue analyzing remaining URLs? (y/N): ");
-                std::io::stdout().flush().unwrap();
+                tracing::info!("Scraping URL: {}", url);
+                match browser.scrape_url(url).await {
+                    Ok(web_page) => {
+                        tracing::info!("Successfully scraped: {}", web_page.url);
 
-                let mut input = String::new();
-                std::io::stdin().read_line(&mut input).unwrap();
-                let continue_crawling = input.trim().to_lowercase() == "y";
+                        // Process page for duplicate detection
+                        let processed_page = self.process_scraped_page(&domain, web_page).await;
 
-                if !continue_crawling {
-                    break;
+                        // Analyze this page's content
+                        match self.analyze_page_content(&processed_page).await {
+                            Ok((page_analysis, entities, met)) => {
+                                analysis.extend(page_analysis);
+                                extracted_entities.extend(entities);
+                                if met {
+                                    objective_met = true;
+                                }
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    "Failed to analyze content for {}: {}",
+                                    processed_page.url,
+                                    e
+                                );
+                                analysis.push(format!(
+                                    "URL: {}\nAnalysis failed: {e}",
+                                    processed_page.url
+                                ));
+                            }
+                        }
+
+                        scraped_content.push(processed_page);
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to scrape URL {}: {}", url, e);
+                        analysis.push(format!("URL: {url}\nScraping failed: {e}"));
+                    }
                 }
             }
 
-            tracing::info!("Scraping URL: {}", url);
-            match browser.scrape_url(url).await {
-                Ok(web_page) => {
-                    tracing::info!("Successfully scraped: {}", web_page.url);
-
-                    // Extract domain for duplicate detection
-                    let domain = if let Ok(parsed) = url::Url::parse(url) {
-                        parsed.host_str().unwrap_or("unknown").to_string()
-                    } else {
-                        "unknown".to_string()
-                    };
-
-                    // Process page for duplicate detection
-                    let processed_page = self.process_scraped_page(&domain, web_page).await;
-
-                    // Analyze this page's content
-                    match self.analyze_page_content(&processed_page).await {
-                        Ok((page_analysis, entities, met)) => {
-                            analysis.extend(page_analysis);
-                            extracted_entities.extend(entities);
-                            if met {
-                                objective_met = true;
-                            }
-                        }
-                        Err(e) => {
-                            tracing::warn!(
-                                "Failed to analyze content for {}: {}",
-                                processed_page.url,
-                                e
-                            );
-                            analysis
-                                .push(format!("URL: {}\nAnalysis failed: {e}", processed_page.url));
+            // Ensure we have at least 3 pages for proper duplicate detection
+            let domain_scraped_content: Vec<_> = scraped_content
+                .iter()
+                .filter(|page| {
+                    if let Ok(parsed) = url::Url::parse(&page.url) {
+                        if let Some(page_domain) = parsed.host_str() {
+                            return page_domain == domain;
                         }
                     }
+                    false
+                })
+                .collect();
 
-                    scraped_content.push(processed_page);
+            if domain_scraped_content.len() < 3 {
+                tracing::info!(
+                    "Need more pages for domain {} to reach minimum of 3 for duplicate detection. Current: {}",
+                    domain,
+                    domain_scraped_content.len()
+                );
+
+                // Try to get more pages from the same domain by exploring links from scraped pages
+                let mut additional_urls = Vec::new();
+                for scraped_page in &domain_scraped_content {
+                    for link in &scraped_page.links {
+                        if let Ok(parsed) = url::Url::parse(link) {
+                            if let Some(link_domain) = parsed.host_str() {
+                                if link_domain == domain && !domain_links.contains(link) {
+                                    additional_urls.push(link.clone());
+                                }
+                            }
+                        }
+                    }
                 }
-                Err(e) => {
-                    tracing::warn!("Failed to scrape URL {}: {}", url, e);
-                    analysis.push(format!("URL: {url}\nScraping failed: {e}"));
+
+                // Remove duplicates and limit to what we need
+                additional_urls.sort();
+                additional_urls.dedup();
+                let needed = 3 - domain_scraped_content.len();
+                additional_urls.truncate(needed);
+
+                tracing::info!(
+                    "Found {} additional URLs for domain {} to reach minimum page count",
+                    additional_urls.len(),
+                    domain
+                );
+
+                // Scrape additional URLs for duplicate detection
+                for url in &additional_urls {
+                    match browser.scrape_url(url).await {
+                        Ok(web_page) => {
+                            tracing::info!(
+                                "Scraped additional page for minimum count: {}",
+                                web_page.url
+                            );
+                            let processed_page = self.process_scraped_page(&domain, web_page).await;
+                            scraped_content.push(processed_page);
+                        }
+                        Err(e) => {
+                            tracing::warn!("Failed to scrape additional URL {}: {}", url, e);
+                        }
+                    }
                 }
             }
         }

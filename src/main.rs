@@ -58,9 +58,10 @@ async fn handle_crawl_mode(config: CrawlerConfig) {
         .install_default()
         .expect("Failed to install rustls crypto provider");
 
-    // Store extract_mode and grouped_mode before moving config
+    // Store extract_mode, grouped_mode, and links_only_mode before moving config
     let extract_mode = config.extract_mode;
     let grouped_mode = config.grouped_mode;
+    let links_only_mode = config.is_links_only_mode();
 
     // Create and run crawler
     // Pass Arc<ClaudeClient> to SmartCrawler::new
@@ -84,7 +85,15 @@ async fn handle_crawl_mode(config: CrawlerConfig) {
             println!("\n{:-^80}", " DOMAIN RESULTS ");
 
             for result in &results.results {
-                if extract_mode {
+                if links_only_mode {
+                    // In links-only mode, just print the URLs
+                    println!("\nLinks Analyzed: {}", result.selected_urls.len());
+                    println!("Links:");
+                    for url in &result.selected_urls {
+                        println!("  {url}");
+                    }
+                    println!("{:-^50}", "");
+                } else if extract_mode {
                     // In extract mode, print the tree structures
                     println!("\nDomain: {}", result.domain);
                     println!("Pages Extracted: {}", result.scraped_content.len());
