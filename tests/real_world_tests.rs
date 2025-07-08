@@ -1,7 +1,6 @@
 use serial_test::serial;
 use smart_crawler::{Browser, FetchStatus, HtmlParser, UrlStorage};
 use std::collections::{HashMap, HashSet};
-use tokio;
 
 /// Full SmartCrawler pipeline that processes a URL using complete functionality
 /// including link discovery, root URL prioritization, and domain-level duplicate filtering
@@ -19,13 +18,13 @@ async fn full_crawl_pipeline(
     let domain = smart_crawler::utils::extract_domain_from_url(initial_url)
         .ok_or("Failed to extract domain from URL")?;
 
-    println!("Starting full SmartCrawler pipeline for domain: {}", domain);
+    println!("Starting full SmartCrawler pipeline for domain: {domain}");
 
     // Connect to WebDriver
     browser
         .connect()
         .await
-        .map_err(|e| format!("Failed to connect to WebDriver: {}", e))?;
+        .map_err(|e| format!("Failed to connect to WebDriver: {e}"))?;
 
     // Phase 1: Preparation stage - collect URLs from same domain
     println!("Phase 1: Preparation stage - collecting URLs from same domain");
@@ -45,14 +44,13 @@ async fn full_crawl_pipeline(
             .unwrap()
             .insert(root_url.clone());
         storage.add_url(root_url.clone());
-        println!("Added root URL for domain {}: {}", domain, root_url);
+        println!("Added root URL for domain {domain}: {root_url}");
     }
 
     // For the domain, try to find additional URLs (up to 3 total)
     if domain_urls[&domain].len() < 3 {
         println!(
-            "Domain {} has only {} URL(s), searching for more...",
-            domain,
+            "Domain {domain} has only {} URL(s), searching for more...",
             domain_urls[&domain].len()
         );
 
@@ -77,13 +75,10 @@ async fn full_crawl_pipeline(
                         }
                     }
 
-                    println!(
-                        "Found {} additional URLs for domain {}",
-                        added_count, domain
-                    );
+                    println!("Found {added_count} additional URLs for domain {domain}");
                 }
                 Err(e) => {
-                    println!("Failed to extract links from {}: {}", first_url, e);
+                    println!("Failed to extract links from {first_url}: {e}");
                 }
             }
         }
@@ -118,8 +113,8 @@ async fn full_crawl_pipeline(
         }
 
         match process_url(&mut browser, &parser, &mut storage, url, false).await {
-            Ok(_) => println!("Successfully processed {}", url),
-            Err(e) => println!("Failed to process {}: {}", url, e),
+            Ok(_) => println!("Successfully processed {url}"),
+            Err(e) => println!("Failed to process {url}: {e}"),
         }
     }
 
@@ -130,15 +125,9 @@ async fn full_crawl_pipeline(
     if let Some(duplicates) = storage.get_domain_duplicates(&domain) {
         let duplicate_count = duplicates.get_duplicate_count();
         if duplicate_count > 0 {
-            println!(
-                "Found {} duplicate node patterns for domain {}",
-                duplicate_count, domain
-            );
+            println!("Found {duplicate_count} duplicate node patterns for domain {domain}");
         } else {
-            println!(
-                "No duplicate patterns found for domain {} (likely insufficient pages)",
-                domain
-            );
+            println!("No duplicate patterns found for domain {domain} (likely insufficient pages)");
         }
     }
 
@@ -152,10 +141,7 @@ async fn full_crawl_pipeline(
         .ok_or("Failed to get HTML tree for initial URL")?
         .clone();
 
-    println!(
-        "SmartCrawler pipeline completed successfully for domain: {}",
-        domain
-    );
+    println!("SmartCrawler pipeline completed successfully for domain: {domain}");
     Ok((html_tree, storage))
 }
 
@@ -167,7 +153,7 @@ async fn process_url(
     url: &str,
     return_html: bool,
 ) -> Result<String, String> {
-    println!("Processing URL: {}", url);
+    println!("Processing URL: {url}");
 
     if let Some(url_data) = storage.get_url_data_mut(url) {
         url_data.update_status(FetchStatus::InProgress);
@@ -245,7 +231,7 @@ async fn test_hacker_news_submissions() {
                 } else {
                     ""
                 };
-                println!("Submission {}: '{}'{}", i + 1, content, status);
+                println!("Submission {}: '{content}'{status}", i + 1);
             }
 
             // Check how many are actual content vs filtered duplicates
@@ -281,11 +267,11 @@ async fn test_hacker_news_submissions() {
             }
         }
         Err(e) => {
-            println!("❌ Failed to crawl Hacker News: {}", e);
+            println!("❌ Failed to crawl Hacker News: {e}");
             println!("Please verify that:");
             println!("1. A WebDriver server is running on port 4444");
             println!("2. The website https://news.ycombinator.com/ is accessible");
-            panic!("Failed to crawl: {}", e);
+            panic!("Failed to crawl: {e}");
         }
     }
 }
@@ -325,7 +311,7 @@ async fn test_mykin_ai_team_member() {
                 } else {
                     ""
                 };
-                println!("Team member {}: '{}'{}", i + 1, content, status);
+                println!("Team member {}: '{content}'{status}", i + 1);
             }
 
             // Look for Kasper Juul specifically (excluding filtered duplicates)
@@ -360,11 +346,11 @@ async fn test_mykin_ai_team_member() {
             }
         }
         Err(e) => {
-            println!("❌ Failed to crawl Mykin.ai: {}", e);
+            println!("❌ Failed to crawl Mykin.ai: {e}");
             println!("Please verify that:");
             println!("1. A WebDriver server is running on port 4444");
             println!("2. The website https://mykin.ai/company is accessible");
-            panic!("Failed to crawl: {}", e);
+            panic!("Failed to crawl: {e}");
         }
     }
 }
@@ -385,13 +371,13 @@ async fn test_webdriver_connection() {
             let _ = browser.close().await;
         }
         Err(e) => {
-            println!("❌ Failed to connect to WebDriver: {}", e);
+            println!("❌ Failed to connect to WebDriver: {e}");
             println!("Please ensure a WebDriver server is running on port 4444");
             println!("Setup options:");
             println!("   • GeckoDriver: geckodriver (uses port 4444 by default)");
             println!("   • ChromeDriver: chromedriver --port=4444");
             println!("   • Docker: docker run -d -p 4444:4444 selenium/standalone-chrome:latest");
-            panic!("WebDriver connection failed: {}", e);
+            panic!("WebDriver connection failed: {e}");
         }
     }
 }
