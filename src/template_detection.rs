@@ -20,16 +20,30 @@ pub struct ElementPath {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TemplatePathStore {
     pub detected_paths: HashSet<ElementPath>,
+    // Track how many HTML elements each template pattern appears in
+    template_counts: HashMap<String, usize>,
+}
+
+/// Simplified store for JSON output containing only detected paths
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ValidatedTemplatePathStore {
+    pub detected_paths: HashSet<ElementPath>,
 }
 
 impl TemplatePathStore {
     pub fn new() -> Self {
         Self {
             detected_paths: HashSet::new(),
+            template_counts: HashMap::new(),
         }
     }
 
     pub fn add_path(&mut self, path: ElementPath) {
+        // Track the count for this template pattern
+        *self
+            .template_counts
+            .entry(path.template_pattern.clone())
+            .or_insert(0) += 1;
         self.detected_paths.insert(path);
     }
 
@@ -37,8 +51,29 @@ impl TemplatePathStore {
         &self.detected_paths
     }
 
+    /// Get validated paths that appear in at least 2 HTML elements
+    pub fn get_validated_paths(&self) -> HashSet<ElementPath> {
+        self.detected_paths
+            .iter()
+            .filter(|path| {
+                self.template_counts
+                    .get(&path.template_pattern)
+                    .is_some_and(|&count| count >= 2)
+            })
+            .cloned()
+            .collect()
+    }
+
     pub fn to_serialized_string(&self) -> String {
         serde_json::to_string_pretty(self).unwrap_or_default()
+    }
+
+    /// Get serialized string with only validated paths (for prep mode)
+    pub fn to_validated_serialized_string(&self) -> String {
+        let validated_store = ValidatedTemplatePathStore {
+            detected_paths: self.get_validated_paths(),
+        };
+        serde_json::to_string_pretty(&validated_store).unwrap_or_default()
     }
 }
 
@@ -268,6 +303,11 @@ impl TemplateDetector {
             return false;
         }
 
+        // Limit templates to 5 parts maximum (words/numbers/floats)
+        if words.len() > 5 {
+            return false;
+        }
+
         // Check for known patterns
         for word in &words {
             let lowercase = word.to_lowercase();
@@ -457,6 +497,38 @@ mod tests {
     }
 
     #[test]
+    fn test_five_part_limit() {
+        let detector = TemplateDetector::new();
+
+        // Valid: 5 parts or less
+        let valid_patterns = vec![
+            "42 comments",         // 2 parts
+            "Posted 2 hours ago",  // 3 parts
+            "Page 5 of 100 items", // 5 parts
+        ];
+
+        for input in valid_patterns {
+            assert!(
+                detector.detect_template(input).is_some(),
+                "Should detect pattern for: {input}"
+            );
+        }
+
+        // Invalid: More than 5 parts
+        let invalid_patterns = vec![
+            "This is a very long sentence with 42 comments here", // 10 parts
+            "Posted by user 123 about 2 hours ago today",         // 8 parts
+        ];
+
+        for input in invalid_patterns {
+            assert!(
+                detector.detect_template(input).is_none(),
+                "Should NOT detect pattern for long sentence: {input}"
+            );
+        }
+    }
+
+    #[test]
     fn test_apply_template() {
         let detector = TemplateDetector::new();
 
@@ -469,15 +541,18 @@ mod tests {
     fn test_edge_cases() {
         let detector = TemplateDetector::new();
 
-        // Multiple numbers - should pick the first one that makes sense
-        let template = detector
-            .detect_template("Posted 2 hours ago by user123")
-            .unwrap();
-        assert_eq!(template.pattern, "Posted {time} hours ago by user123");
+        // Multiple numbers within 5-part limit
+        let template = detector.detect_template("Posted 2 hours ago").unwrap();
+        assert_eq!(template.pattern, "Posted {time} hours ago");
 
-        // Complex patterns
+        // Complex patterns within limit
         let template = detector.detect_template("Page 5 of 100").unwrap();
         assert_eq!(template.pattern, "Page {count} of 100");
+
+        // Test that patterns exceeding 5 parts are rejected
+        assert!(detector
+            .detect_template("Posted 2 hours ago by user123")
+            .is_none());
     }
 
     #[test]
@@ -745,5 +820,102 @@ mod tests {
         // (which demonstrates the value of template detection)
         assert_eq!(body1.children[0].content, body2.children[0].content);
         assert_eq!(body1.children[1].content, body2.children[1].content);
+    }
+
+    #[test]
+    fn test_template_count_validation() {
+        let mut store = TemplatePathStore::new();
+
+        // Add the same template pattern multiple times (simulating multiple HTML elements)
+        let template_pattern = "{count} comments".to_string();
+
+        // Add template path 1 time (should not be validated)
+        let path = ElementPath {
+            components: vec![ElementPathComponent {
+                tag: "div".to_string(),
+                classes: vec!["comment-0".to_string()],
+            }],
+            template_pattern: template_pattern.clone(),
+        };
+        store.add_path(path);
+
+        // Should not be validated (only 1 element)
+        assert_eq!(store.get_validated_paths().len(), 0);
+
+        // Add 1 more time (total 2, should be validated)
+        let path = ElementPath {
+            components: vec![ElementPathComponent {
+                tag: "div".to_string(),
+                classes: vec!["comment-1".to_string()],
+            }],
+            template_pattern: template_pattern.clone(),
+        };
+        store.add_path(path);
+
+        // Should now be validated (>=2 elements)
+        assert_eq!(store.get_validated_paths().len(), 2);
+
+        // Add 2 more times (total 4, should still be validated)
+        for i in 2..4 {
+            let path = ElementPath {
+                components: vec![ElementPathComponent {
+                    tag: "div".to_string(),
+                    classes: vec![format!("comment-{}", i)],
+                }],
+                template_pattern: template_pattern.clone(),
+            };
+            store.add_path(path);
+        }
+
+        // Should still be validated (4 elements >= 2)
+        assert_eq!(store.get_validated_paths().len(), 4);
+
+        // Test that different template patterns are counted separately
+        let different_pattern = "{time} hours ago".to_string();
+        let path = ElementPath {
+            components: vec![ElementPathComponent {
+                tag: "span".to_string(),
+                classes: vec!["timestamp".to_string()],
+            }],
+            template_pattern: different_pattern,
+        };
+        store.add_path(path);
+
+        // Still only 4 validated paths (the new pattern appears only once, count < 2)
+        assert_eq!(store.get_validated_paths().len(), 4);
+    }
+
+    #[test]
+    fn test_validated_json_output_structure() {
+        let mut store = TemplatePathStore::new();
+
+        // Add some template paths
+        let template_pattern = "{count} comments".to_string();
+        for i in 0..3 {
+            let path = ElementPath {
+                components: vec![ElementPathComponent {
+                    tag: "div".to_string(),
+                    classes: vec![format!("comment-{}", i)],
+                }],
+                template_pattern: template_pattern.clone(),
+            };
+            store.add_path(path);
+        }
+
+        // Get the JSON output
+        let json_output = store.to_validated_serialized_string();
+        
+        // Parse the JSON to verify structure
+        let parsed: serde_json::Value = serde_json::from_str(&json_output).unwrap();
+        
+        // Should have "detected_paths" field
+        assert!(parsed.get("detected_paths").is_some());
+        
+        // Should NOT have "template_counts" field
+        assert!(parsed.get("template_counts").is_none());
+        
+        // Should have the validated paths (3 elements >= 2)
+        let detected_paths = parsed["detected_paths"].as_array().unwrap();
+        assert_eq!(detected_paths.len(), 3);
     }
 }
