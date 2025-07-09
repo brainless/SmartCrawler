@@ -45,14 +45,14 @@ impl TemplatePathStore {
         &self.detected_paths
     }
 
-    /// Get validated paths that appear in more than 3 HTML elements
+    /// Get validated paths that appear in at least 2 HTML elements
     pub fn get_validated_paths(&self) -> HashSet<ElementPath> {
         self.detected_paths
             .iter()
             .filter(|path| {
                 self.template_counts
                     .get(&path.template_pattern)
-                    .is_some_and(|&count| count > 3)
+                    .is_some_and(|&count| count >= 2)
             })
             .cloned()
             .collect()
@@ -824,22 +824,33 @@ mod tests {
         // Add the same template pattern multiple times (simulating multiple HTML elements)
         let template_pattern = "{count} comments".to_string();
 
-        // Add template path 2 times (should not be validated)
-        for i in 0..2 {
-            let path = ElementPath {
-                components: vec![ElementPathComponent {
-                    tag: "div".to_string(),
-                    classes: vec![format!("comment-{}", i)],
-                }],
-                template_pattern: template_pattern.clone(),
-            };
-            store.add_path(path);
-        }
+        // Add template path 1 time (should not be validated)
+        let path = ElementPath {
+            components: vec![ElementPathComponent {
+                tag: "div".to_string(),
+                classes: vec!["comment-0".to_string()],
+            }],
+            template_pattern: template_pattern.clone(),
+        };
+        store.add_path(path);
 
-        // Should not be validated (only 2 elements)
+        // Should not be validated (only 1 element)
         assert_eq!(store.get_validated_paths().len(), 0);
 
-        // Add 2 more times (total 4, should be validated)
+        // Add 1 more time (total 2, should be validated)
+        let path = ElementPath {
+            components: vec![ElementPathComponent {
+                tag: "div".to_string(),
+                classes: vec!["comment-1".to_string()],
+            }],
+            template_pattern: template_pattern.clone(),
+        };
+        store.add_path(path);
+
+        // Should now be validated (>=2 elements)
+        assert_eq!(store.get_validated_paths().len(), 2);
+
+        // Add 2 more times (total 4, should still be validated)
         for i in 2..4 {
             let path = ElementPath {
                 components: vec![ElementPathComponent {
@@ -851,7 +862,7 @@ mod tests {
             store.add_path(path);
         }
 
-        // Should now be validated (>3 elements)
+        // Should still be validated (4 elements >= 2)
         assert_eq!(store.get_validated_paths().len(), 4);
 
         // Test that different template patterns are counted separately
@@ -865,7 +876,7 @@ mod tests {
         };
         store.add_path(path);
 
-        // Still only 4 validated paths (the new pattern appears only once)
+        // Still only 4 validated paths (the new pattern appears only once, count < 2)
         assert_eq!(store.get_validated_paths().len(), 4);
     }
 }

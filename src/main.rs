@@ -153,7 +153,7 @@ async fn main() {
 
         let validated_paths = combined_store.get_validated_paths();
         info!(
-            "Template analysis complete, found {} total template paths, {} validated (>3 elements)",
+            "Template analysis complete, found {} total template paths, {} validated (>=2 elements)",
             combined_store.get_paths().len(),
             validated_paths.len()
         );
@@ -212,7 +212,7 @@ async fn main() {
                 }
             }
 
-            println!("\nValidated Template Paths (>3 elements, Rust-serializable format):");
+            println!("\nValidated Template Paths (>=2 elements, Rust-serializable format):");
             println!("{}", combined_store.to_validated_serialized_string());
         }
     } else {
