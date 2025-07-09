@@ -24,6 +24,12 @@ pub struct TemplatePathStore {
     template_counts: HashMap<String, usize>,
 }
 
+/// Simplified store for JSON output containing only detected paths
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ValidatedTemplatePathStore {
+    pub detected_paths: HashSet<ElementPath>,
+}
+
 impl TemplatePathStore {
     pub fn new() -> Self {
         Self {
@@ -64,9 +70,8 @@ impl TemplatePathStore {
 
     /// Get serialized string with only validated paths (for prep mode)
     pub fn to_validated_serialized_string(&self) -> String {
-        let validated_store = TemplatePathStore {
+        let validated_store = ValidatedTemplatePathStore {
             detected_paths: self.get_validated_paths(),
-            template_counts: self.template_counts.clone(),
         };
         serde_json::to_string_pretty(&validated_store).unwrap_or_default()
     }
@@ -878,5 +883,39 @@ mod tests {
 
         // Still only 4 validated paths (the new pattern appears only once, count < 2)
         assert_eq!(store.get_validated_paths().len(), 4);
+    }
+
+    #[test]
+    fn test_validated_json_output_structure() {
+        let mut store = TemplatePathStore::new();
+
+        // Add some template paths
+        let template_pattern = "{count} comments".to_string();
+        for i in 0..3 {
+            let path = ElementPath {
+                components: vec![ElementPathComponent {
+                    tag: "div".to_string(),
+                    classes: vec![format!("comment-{}", i)],
+                }],
+                template_pattern: template_pattern.clone(),
+            };
+            store.add_path(path);
+        }
+
+        // Get the JSON output
+        let json_output = store.to_validated_serialized_string();
+        
+        // Parse the JSON to verify structure
+        let parsed: serde_json::Value = serde_json::from_str(&json_output).unwrap();
+        
+        // Should have "detected_paths" field
+        assert!(parsed.get("detected_paths").is_some());
+        
+        // Should NOT have "template_counts" field
+        assert!(parsed.get("template_counts").is_none());
+        
+        // Should have the validated paths (3 elements >= 2)
+        let detected_paths = parsed["detected_paths"].as_array().unwrap();
+        assert_eq!(detected_paths.len(), 3);
     }
 }
