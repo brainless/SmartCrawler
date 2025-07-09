@@ -151,25 +151,35 @@ async fn main() {
         }
     }
 
-    // Phase 3: Analyze domain duplicates
-    info!("Analyzing domain-level duplicate nodes");
+    // Phase 2.5: Apply template detection if enabled
+    if args.template {
+        info!("Applying template detection to HTML content");
+        apply_template_detection_to_storage(&mut storage);
+    }
 
-    for domain in domain_urls.keys() {
-        storage.analyze_domain_duplicates(domain);
-        if let Some(duplicates) = storage.get_domain_duplicates(domain) {
-            let duplicate_count = duplicates.get_duplicate_count();
-            if duplicate_count > 0 {
-                info!(
-                    "Found {} duplicate node patterns for domain {}",
-                    duplicate_count, domain
-                );
-            } else {
-                info!(
-                    "No duplicate patterns found for domain {} (likely insufficient pages)",
-                    domain
-                );
+    // Phase 3: Analyze domain duplicates (skip if template mode is enabled)
+    if !args.template {
+        info!("Analyzing domain-level duplicate nodes");
+
+        for domain in domain_urls.keys() {
+            storage.analyze_domain_duplicates(domain);
+            if let Some(duplicates) = storage.get_domain_duplicates(domain) {
+                let duplicate_count = duplicates.get_duplicate_count();
+                if duplicate_count > 0 {
+                    info!(
+                        "Found {} duplicate node patterns for domain {}",
+                        duplicate_count, domain
+                    );
+                } else {
+                    info!(
+                        "No duplicate patterns found for domain {} (likely insufficient pages)",
+                        domain
+                    );
+                }
             }
         }
+    } else {
+        info!("Skipping domain duplicate analysis in template mode");
     }
 
     let _ = browser.close().await;
@@ -188,15 +198,20 @@ async fn main() {
 
             if args.verbose {
                 if let Some(html_tree) = &url_data.html_tree {
-                    if let Some(domain_duplicates) = storage.get_domain_duplicates(&url_data.domain)
+                    if args.template {
+                        // In template mode, show HTML tree with template patterns (no duplicate filtering)
+                        println!("HTML Tree with Template Patterns:");
+                        print_html_tree_with_template(html_tree, 0, false);
+                    } else if let Some(domain_duplicates) =
+                        storage.get_domain_duplicates(&url_data.domain)
                     {
                         let filtered_tree =
                             HtmlParser::filter_domain_duplicates(html_tree, domain_duplicates);
                         println!("Filtered HTML Tree (showing complete structure with duplicate marking):");
-                        print_html_tree(&filtered_tree, 0);
+                        print_html_tree_with_template(&filtered_tree, 0, false);
                     } else {
                         println!("HTML Tree (no duplicates to filter):");
-                        print_html_tree(html_tree, 0);
+                        print_html_tree_with_template(html_tree, 0, false);
                     }
                 }
             }
@@ -260,7 +275,47 @@ async fn process_url(
     }
 }
 
-fn print_html_tree(node: &smart_crawler::HtmlNode, indent: usize) {
+/// Apply template detection to all HTML trees in storage
+fn apply_template_detection_to_storage(storage: &mut smart_crawler::UrlStorage) {
+    let detector = smart_crawler::TemplateDetector::new();
+
+    // Get all URLs to process
+    let all_urls: Vec<String> = storage
+        .get_all_urls()
+        .iter()
+        .map(|url_data| url_data.url.clone())
+        .collect();
+
+    for url in &all_urls {
+        if let Some(url_data) = storage.get_url_data_mut(url) {
+            if let Some(html_tree) = &mut url_data.html_tree {
+                apply_template_to_node(html_tree, &detector);
+            }
+        }
+    }
+}
+
+/// Recursively apply template detection to HTML node content
+fn apply_template_to_node(
+    node: &mut smart_crawler::HtmlNode,
+    detector: &smart_crawler::TemplateDetector,
+) {
+    // Apply template detection to this node's content
+    if !node.content.is_empty() {
+        node.content = detector.apply_template(&node.content);
+    }
+
+    // Recursively apply to all children
+    for child in &mut node.children {
+        apply_template_to_node(child, detector);
+    }
+}
+
+fn print_html_tree_with_template(
+    node: &smart_crawler::HtmlNode,
+    indent: usize,
+    _use_template: bool,
+) {
     let indent_str = "  ".repeat(indent);
 
     // Build the element info string with tag, id, and classes
@@ -273,6 +328,7 @@ fn print_html_tree(node: &smart_crawler::HtmlNode, indent: usize) {
     }
 
     if !node.content.is_empty() {
+        // Content already contains template patterns if template mode was enabled
         println!(
             "{}{}: {}",
             indent_str,
@@ -284,6 +340,6 @@ fn print_html_tree(node: &smart_crawler::HtmlNode, indent: usize) {
     }
 
     for child in &node.children {
-        print_html_tree(child, indent + 1);
+        print_html_tree_with_template(child, indent + 1, _use_template);
     }
 }
