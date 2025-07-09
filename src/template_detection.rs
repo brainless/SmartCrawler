@@ -580,4 +580,77 @@ mod tests {
             apply_template_to_tree(child, detector);
         }
     }
+
+    #[test]
+    fn test_template_mode_without_duplicate_filtering() {
+        use crate::html_parser::HtmlParser;
+        use crate::storage::{FetchStatus, UrlStorage};
+
+        let mut storage = UrlStorage::new();
+        let parser = HtmlParser::new();
+        let detector = TemplateDetector::new();
+
+        // Add URLs to storage
+        storage.add_url("https://example.com/page1".to_string());
+        storage.add_url("https://example.com/page2".to_string());
+
+        // Create HTML with template-detectable content
+        let html1 = r#"<html><body>
+            <div class="comments">42 comments</div>
+            <div class="timestamp">2 hours ago</div>
+        </body></html>"#;
+
+        let html2 = r#"<html><body>
+            <div class="comments">16 comments</div>
+            <div class="timestamp">5 hours ago</div>
+        </body></html>"#;
+
+        let mut tree1 = parser.parse(html1);
+        let mut tree2 = parser.parse(html2);
+
+        // Apply template detection to the trees (simulating template mode)
+        apply_template_to_tree(&mut tree1, &detector);
+        apply_template_to_tree(&mut tree2, &detector);
+
+        // Set the HTML data for both URLs
+        if let Some(url_data) = storage.get_url_data_mut("https://example.com/page1") {
+            url_data.set_html_data(html1.to_string(), tree1, Some("Page 1".to_string()));
+            url_data.update_status(FetchStatus::Success);
+        }
+
+        if let Some(url_data) = storage.get_url_data_mut("https://example.com/page2") {
+            url_data.set_html_data(html2.to_string(), tree2, Some("Page 2".to_string()));
+            url_data.update_status(FetchStatus::Success);
+        }
+
+        // In template mode, we should NOT analyze domain duplicates
+        // So let's verify that without calling analyze_domain_duplicates,
+        // we get no duplicate information
+        let duplicates = storage.get_domain_duplicates("example.com");
+        assert!(duplicates.is_none(), "No duplicates should be analyzed in template mode");
+
+        // Verify that content has been converted to templates and is visible
+        let page1_tree = storage
+            .get_url_data("https://example.com/page1")
+            .and_then(|data| data.html_tree.as_ref())
+            .unwrap();
+        let page2_tree = storage
+            .get_url_data("https://example.com/page2")
+            .and_then(|data| data.html_tree.as_ref())
+            .unwrap();
+
+        // Both pages should show template patterns, not "[FILTERED DUPLICATE]"
+        let body1 = &page1_tree.children[0];
+        let body2 = &page2_tree.children[0];
+
+        assert_eq!(body1.children[0].content, "{count} comments");
+        assert_eq!(body1.children[1].content, "{time} hours ago");
+        assert_eq!(body2.children[0].content, "{count} comments");
+        assert_eq!(body2.children[1].content, "{time} hours ago");
+
+        // Verify that both pages show the same template patterns
+        // (which demonstrates the value of template detection)
+        assert_eq!(body1.children[0].content, body2.children[0].content);
+        assert_eq!(body1.children[1].content, body2.children[1].content);
+    }
 }

@@ -157,25 +157,29 @@ async fn main() {
         apply_template_detection_to_storage(&mut storage);
     }
 
-    // Phase 3: Analyze domain duplicates
-    info!("Analyzing domain-level duplicate nodes");
+    // Phase 3: Analyze domain duplicates (skip if template mode is enabled)
+    if !args.template {
+        info!("Analyzing domain-level duplicate nodes");
 
-    for domain in domain_urls.keys() {
-        storage.analyze_domain_duplicates(domain);
-        if let Some(duplicates) = storage.get_domain_duplicates(domain) {
-            let duplicate_count = duplicates.get_duplicate_count();
-            if duplicate_count > 0 {
-                info!(
-                    "Found {} duplicate node patterns for domain {}",
-                    duplicate_count, domain
-                );
-            } else {
-                info!(
-                    "No duplicate patterns found for domain {} (likely insufficient pages)",
-                    domain
-                );
+        for domain in domain_urls.keys() {
+            storage.analyze_domain_duplicates(domain);
+            if let Some(duplicates) = storage.get_domain_duplicates(domain) {
+                let duplicate_count = duplicates.get_duplicate_count();
+                if duplicate_count > 0 {
+                    info!(
+                        "Found {} duplicate node patterns for domain {}",
+                        duplicate_count, domain
+                    );
+                } else {
+                    info!(
+                        "No duplicate patterns found for domain {} (likely insufficient pages)",
+                        domain
+                    );
+                }
             }
         }
+    } else {
+        info!("Skipping domain duplicate analysis in template mode");
     }
 
     let _ = browser.close().await;
@@ -194,7 +198,11 @@ async fn main() {
 
             if args.verbose {
                 if let Some(html_tree) = &url_data.html_tree {
-                    if let Some(domain_duplicates) = storage.get_domain_duplicates(&url_data.domain)
+                    if args.template {
+                        // In template mode, show HTML tree with template patterns (no duplicate filtering)
+                        println!("HTML Tree with Template Patterns:");
+                        print_html_tree_with_template(html_tree, 0, false);
+                    } else if let Some(domain_duplicates) = storage.get_domain_duplicates(&url_data.domain)
                     {
                         let filtered_tree =
                             HtmlParser::filter_domain_duplicates(html_tree, domain_duplicates);
