@@ -1,10 +1,9 @@
 use clap::{Arg, Command};
-use std::collections::HashSet;
 use url::Url;
 
 #[derive(Debug, Clone)]
 pub struct CliArgs {
-    pub domains: Vec<String>,
+    pub domain: String,
     pub prep: bool,
 }
 
@@ -17,49 +16,30 @@ impl CliArgs {
                 Arg::new("domain")
                     .long("domain")
                     .value_name("DOMAIN")
-                    .help("Domain to crawl (can be specified multiple times). Can be a URL or domain name")
-                    .action(clap::ArgAction::Append)
+                    .help("Domain to crawl. Can be a URL or domain name")
                     .required(true),
             )
             .arg(
                 Arg::new("prep")
                     .long("prep")
-                    .help("Enable preparation mode to discover template patterns across domain pages")
+                    .help(
+                        "Enable preparation mode to discover template patterns across domain pages",
+                    )
                     .action(clap::ArgAction::SetTrue),
             )
             .get_matches();
 
-        let domains: Vec<String> = matches
-            .get_many::<String>("domain")
-            .unwrap_or_default()
-            .cloned()
-            .collect();
+        let domain_input = matches
+            .get_one::<String>("domain")
+            .ok_or("Domain argument is required")?;
 
-        let validated_domains = Self::validate_and_extract_domains(domains)?;
+        let validated_domain = Self::extract_domain(domain_input)?;
         let prep = matches.get_flag("prep");
 
         Ok(CliArgs {
-            domains: validated_domains,
+            domain: validated_domain,
             prep,
         })
-    }
-
-    fn validate_and_extract_domains(domains: Vec<String>) -> Result<Vec<String>, String> {
-        let mut seen_domains = HashSet::new();
-        let mut validated_domains = Vec::new();
-
-        for domain_input in domains {
-            let domain = Self::extract_domain(&domain_input)?;
-            if seen_domains.insert(domain.clone()) {
-                validated_domains.push(domain);
-            }
-        }
-
-        if validated_domains.is_empty() {
-            return Err("No valid domains provided".to_string());
-        }
-
-        Ok(validated_domains)
     }
 
     fn extract_domain(input: &str) -> Result<String, String> {
@@ -90,17 +70,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_validate_and_extract_domains() {
-        let domains = vec![
-            "https://example.com".to_string(),
-            "example.org".to_string(),
-            "https://example.com/path".to_string(), // duplicate domain
-        ];
+    fn test_single_domain_parsing() {
+        // Test that single domain parsing works correctly
+        let args = CliArgs {
+            domain: "example.com".to_string(),
+            prep: false,
+        };
 
-        let result = CliArgs::validate_and_extract_domains(domains).unwrap();
-        assert_eq!(result.len(), 2);
-        assert!(result.contains(&"example.com".to_string()));
-        assert!(result.contains(&"example.org".to_string()));
+        assert_eq!(args.domain, "example.com");
+        assert!(!args.prep);
     }
 
     #[test]
@@ -133,11 +111,11 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_empty_domains() {
-        let domains = vec![];
-        let result = CliArgs::validate_and_extract_domains(domains);
+    fn test_extract_domain_error() {
+        // Test that invalid domain extraction returns error
+        let result = CliArgs::extract_domain("://invalid");
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("No valid domains provided"));
+        assert!(result.unwrap_err().contains("Invalid domain or URL"));
     }
 
     #[test]
@@ -145,11 +123,11 @@ mod tests {
         // Test that prep flag is properly parsed (this is a simplified test
         // since we can't easily test the full CLI parsing in unit tests)
         let args = CliArgs {
-            domains: vec!["example.com".to_string()],
+            domain: "example.com".to_string(),
             prep: true,
         };
 
         assert!(args.prep);
-        assert_eq!(args.domains.len(), 1);
+        assert_eq!(args.domain, "example.com");
     }
 }

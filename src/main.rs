@@ -21,20 +21,18 @@ async fn main() {
         }
     };
 
-    info!("Starting SmartCrawler with {} domains", args.domains.len());
+    info!("Starting SmartCrawler with domain: {}", args.domain);
 
     let mut storage = UrlStorage::new();
     let mut domain_urls: HashMap<String, HashSet<String>> = HashMap::new();
 
-    // Convert domains to initial URLs and group them
-    for domain in &args.domains {
-        let root_url = smart_crawler::utils::construct_root_url(domain);
-        storage.add_url(root_url.clone());
-        domain_urls
-            .entry(domain.clone())
-            .or_default()
-            .insert(root_url);
-    }
+    // Convert domain to initial URL
+    let root_url = smart_crawler::utils::construct_root_url(&args.domain);
+    storage.add_url(root_url.clone());
+    domain_urls
+        .entry(args.domain.clone())
+        .or_default()
+        .insert(root_url);
 
     let mut browser = Browser::new(4444);
 
@@ -61,41 +59,42 @@ async fn main() {
 
     let max_urls_per_domain = if args.prep { 10 } else { 3 };
 
-    // For each domain, discover additional URLs
-    for (domain, urls) in &mut domain_urls {
-        if urls.len() < max_urls_per_domain {
-            info!(
-                "Domain {} has {} URL(s), searching for more (max: {})...",
-                domain,
-                urls.len(),
-                max_urls_per_domain
-            );
+    // Discover additional URLs for the domain
+    let domain = &args.domain;
+    let urls = domain_urls.get_mut(domain).unwrap();
 
-            // Pick the first URL to extract links from
-            if let Some(first_url) = urls.iter().next() {
-                match process_url(&mut browser, &parser, &mut storage, first_url, true).await {
-                    Ok(html_source) => {
-                        let additional_urls = parser.extract_links(&html_source, domain);
-                        let mut added_count = 0;
+    if urls.len() < max_urls_per_domain {
+        info!(
+            "Domain {} has {} URL(s), searching for more (max: {})...",
+            domain,
+            urls.len(),
+            max_urls_per_domain
+        );
 
-                        for additional_url in additional_urls {
-                            if urls.len() >= max_urls_per_domain {
-                                break;
-                            }
-                            if urls.insert(additional_url.clone()) {
-                                storage.add_url(additional_url);
-                                added_count += 1;
-                            }
+        // Pick the first URL to extract links from
+        if let Some(first_url) = urls.iter().next() {
+            match process_url(&mut browser, &parser, &mut storage, first_url, true).await {
+                Ok(html_source) => {
+                    let additional_urls = parser.extract_links(&html_source, domain);
+                    let mut added_count = 0;
+
+                    for additional_url in additional_urls {
+                        if urls.len() >= max_urls_per_domain {
+                            break;
                         }
+                        if urls.insert(additional_url.clone()) {
+                            storage.add_url(additional_url);
+                            added_count += 1;
+                        }
+                    }
 
-                        info!(
-                            "Found {} additional URLs for domain {}",
-                            added_count, domain
-                        );
-                    }
-                    Err(e) => {
-                        error!("Failed to extract links from {}: {}", first_url, e);
-                    }
+                    info!(
+                        "Found {} additional URLs for domain {}",
+                        added_count, domain
+                    );
+                }
+                Err(e) => {
+                    error!("Failed to extract links from {}: {}", first_url, e);
                 }
             }
         }
@@ -106,18 +105,19 @@ async fn main() {
 
     let mut all_urls: Vec<String> = Vec::new();
 
-    // Collect all URLs with root URLs prioritized
-    for (domain, urls) in &domain_urls {
-        let root_url = smart_crawler::utils::construct_root_url(domain);
-        // Add root URL first
-        if urls.contains(&root_url) {
-            all_urls.push(root_url.clone());
-        }
-        // Then add other URLs
-        for url in urls {
-            if url != &root_url {
-                all_urls.push(url.clone());
-            }
+    // Collect all URLs with root URL prioritized
+    let domain = &args.domain;
+    let urls = domain_urls.get(domain).unwrap();
+    let root_url = smart_crawler::utils::construct_root_url(domain);
+
+    // Add root URL first
+    if urls.contains(&root_url) {
+        all_urls.push(root_url.clone());
+    }
+    // Then add other URLs
+    for url in urls {
+        if url != &root_url {
+            all_urls.push(url.clone());
         }
     }
 
@@ -158,21 +158,20 @@ async fn main() {
     } else {
         info!("Running standard duplicate analysis");
 
-        for domain in domain_urls.keys() {
-            storage.analyze_domain_duplicates(domain);
-            if let Some(duplicates) = storage.get_domain_duplicates(domain) {
-                let duplicate_count = duplicates.get_duplicate_count();
-                if duplicate_count > 0 {
-                    info!(
-                        "Found {} duplicate node patterns for domain {}",
-                        duplicate_count, domain
-                    );
-                } else {
-                    info!(
-                        "No duplicate patterns found for domain {} (likely insufficient pages)",
-                        domain
-                    );
-                }
+        let domain = &args.domain;
+        storage.analyze_domain_duplicates(domain);
+        if let Some(duplicates) = storage.get_domain_duplicates(domain) {
+            let duplicate_count = duplicates.get_duplicate_count();
+            if duplicate_count > 0 {
+                info!(
+                    "Found {} duplicate node patterns for domain {}",
+                    duplicate_count, domain
+                );
+            } else {
+                info!(
+                    "No duplicate patterns found for domain {} (likely insufficient pages)",
+                    domain
+                );
             }
         }
     }
@@ -192,9 +191,9 @@ async fn main() {
             println!("No URLs were successfully processed.");
         } else {
             println!(
-                "Processed {} URLs across {} domains:",
+                "Processed {} URLs for domain {}:",
                 completed_urls.len(),
-                args.domains.len()
+                args.domain
             );
             for url_data in &completed_urls {
                 println!(
