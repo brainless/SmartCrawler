@@ -4,7 +4,7 @@ use url::Url;
 #[derive(Debug, Clone)]
 pub struct CliArgs {
     pub domain: String,
-    pub prep: bool,
+    pub prep: Option<String>,
 }
 
 impl CliArgs {
@@ -22,10 +22,11 @@ impl CliArgs {
             .arg(
                 Arg::new("prep")
                     .long("prep")
+                    .value_name("FILE")
                     .help(
-                        "Enable preparation mode to discover template patterns across domain pages",
+                        "Enable preparation mode to discover template patterns across domain pages. Saves detected template paths to the specified JSON file",
                     )
-                    .action(clap::ArgAction::SetTrue),
+                    .required(false),
             )
             .get_matches();
 
@@ -34,7 +35,7 @@ impl CliArgs {
             .ok_or("Domain argument is required")?;
 
         let validated_domain = Self::extract_domain(domain_input)?;
-        let prep = matches.get_flag("prep");
+        let prep = matches.get_one::<String>("prep").cloned();
 
         Ok(CliArgs {
             domain: validated_domain,
@@ -74,11 +75,11 @@ mod tests {
         // Test that single domain parsing works correctly
         let args = CliArgs {
             domain: "example.com".to_string(),
-            prep: false,
+            prep: None,
         };
 
         assert_eq!(args.domain, "example.com");
-        assert!(!args.prep);
+        assert!(args.prep.is_none());
     }
 
     #[test]
@@ -124,10 +125,11 @@ mod tests {
         // since we can't easily test the full CLI parsing in unit tests)
         let args = CliArgs {
             domain: "example.com".to_string(),
-            prep: true,
+            prep: Some("templates.json".to_string()),
         };
 
-        assert!(args.prep);
+        assert!(args.prep.is_some());
+        assert_eq!(args.prep.unwrap(), "templates.json");
         assert_eq!(args.domain, "example.com");
     }
 }

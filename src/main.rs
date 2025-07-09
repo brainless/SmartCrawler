@@ -57,7 +57,7 @@ async fn main() {
     // Phase 1: URL Discovery - find additional URLs for each domain
     info!("Starting URL discovery for domains");
 
-    let max_urls_per_domain = if args.prep { 10 } else { 3 };
+    let max_urls_per_domain = if args.prep.is_some() { 10 } else { 3 };
 
     // Discover additional URLs for the domain
     let domain = &args.domain;
@@ -135,7 +135,7 @@ async fn main() {
     }
 
     // Phase 3: Template analysis (prep mode) or standard duplicate analysis
-    if args.prep {
+    if let Some(prep_file) = &args.prep {
         info!("Running template detection analysis in prep mode");
         let mut combined_store = TemplatePathStore::new();
         let template_detector = TemplateDetector::new();
@@ -157,6 +157,12 @@ async fn main() {
             combined_store.get_paths().len(),
             validated_paths.len()
         );
+
+        // Write template data to JSON file
+        match std::fs::write(prep_file, combined_store.to_validated_serialized_string()) {
+            Ok(_) => info!("Template data written to {}", prep_file),
+            Err(e) => error!("Failed to write template data to {}: {}", prep_file, e),
+        }
     } else {
         info!("Running standard duplicate analysis");
 
@@ -180,8 +186,8 @@ async fn main() {
 
     let _ = browser.close().await;
 
-    if args.prep {
-        // In prep mode, output detected template paths in serialized format
+    if args.prep.is_some() {
+        // In prep mode, output template count summary to terminal
         println!("\n=== Template Path Detection Results ===");
 
         let mut combined_store = TemplatePathStore::new();
@@ -212,8 +218,17 @@ async fn main() {
                 }
             }
 
-            println!("\nValidated Template Paths (>=2 elements, Rust-serializable format):");
-            println!("{}", combined_store.to_validated_serialized_string());
+            let validated_paths = combined_store.get_validated_paths();
+            println!("\nTemplate Detection Summary:");
+            println!(
+                "  Total template paths found: {}",
+                combined_store.get_paths().len()
+            );
+            println!(
+                "  Validated template paths (>=2 elements): {}",
+                validated_paths.len()
+            );
+            println!("  Template data saved to: {}", args.prep.as_ref().unwrap());
         }
     } else {
         // Regular mode - show crawling results
