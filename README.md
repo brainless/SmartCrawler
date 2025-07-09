@@ -42,6 +42,10 @@ Choose your operating system for detailed setup instructions:
 
 - **[CLI Options](docs/cli-options.md)** - Complete command-line reference and examples
 
+### Development
+
+- **[Development Guide](docs/development.md)** - Setup, building, testing, and contributing instructions
+
 ## 🔧 System Requirements
 
 - **Operating System**: Windows 10+, macOS 10.15+, or Linux
@@ -73,50 +77,19 @@ smart-crawler --link "https://site1.com" --link "https://site2.com"
 # Start Firefox WebDriver
 geckodriver --port 4444
 
-# Start Chrome WebDriver  
+# Start Chrome WebDriver
 chromedriver --port=4444
 ```
 
 ## 🛠️ Development
 
-### Building from Source
+For developers interested in contributing to SmartCrawler or building from source:
 
-```bash
-git clone https://github.com/pixlie/SmartCrawler.git
-cd SmartCrawler
-cargo build --release
-```
-
-### Running Tests
-
-```bash
-cargo test
-```
-
-### Development Commands
-
-```bash
-# Format code
-cargo fmt
-
-# Run linter
-cargo clippy
-
-# Debug mode
-RUST_LOG=debug cargo run -- --link "https://example.com"
-```
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+- **[Development Guide](docs/development.md)** - Complete setup, building, testing, and contributing instructions
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the GPL-3.0 license - see the [LICENSE](LICENSE) file for details.
 
 ## 🔗 Links
 
