@@ -1,4 +1,6 @@
-use smart_crawler::{Browser, CliArgs, FetchStatus, HtmlParser, UrlStorage};
+use smart_crawler::{
+    Browser, CliArgs, FetchStatus, HtmlParser, TemplateDetector, TemplatePathStore, UrlStorage,
+};
 use std::collections::{HashMap, HashSet};
 use tracing::{debug, error, info};
 
@@ -19,12 +21,18 @@ async fn main() {
         }
     };
 
-    info!("Starting SmartCrawler with {} URLs", args.links.len());
+    info!("Starting SmartCrawler with domain: {}", args.domain);
 
     let mut storage = UrlStorage::new();
-    for link in &args.links {
-        storage.add_url(link.clone());
-    }
+    let mut domain_urls: HashMap<String, HashSet<String>> = HashMap::new();
+
+    // Convert domain to initial URL
+    let root_url = smart_crawler::utils::construct_root_url(&args.domain);
+    storage.add_url(root_url.clone());
+    domain_urls
+        .entry(args.domain.clone())
+        .or_default()
+        .insert(root_url);
 
     let mut browser = Browser::new(4444);
 
@@ -46,95 +54,70 @@ async fn main() {
 
     let parser = HtmlParser::new();
 
-    // Phase 1: Preparation stage - fetch additional URLs from same domains
-    info!("Starting preparation stage to collect URLs from same domains");
+    // Phase 1: URL Discovery - find additional URLs for each domain
+    info!("Starting URL discovery for domains");
 
-    let mut domain_urls: HashMap<String, HashSet<String>> = HashMap::new();
+    let max_urls_per_domain = if args.prep { 10 } else { 3 };
 
-    // Group initial URLs by domain
-    for url in &args.links {
-        if let Some(domain) = smart_crawler::utils::extract_domain_from_url(url) {
-            domain_urls.entry(domain).or_default().insert(url.clone());
-        }
-    }
+    // Discover additional URLs for the domain
+    let domain = &args.domain;
+    let urls = domain_urls.get_mut(domain).unwrap();
 
-    // Add root URLs for each domain if not already present
-    for (domain, urls) in &mut domain_urls {
-        let root_url = smart_crawler::utils::construct_root_url(domain);
-        if !urls.contains(&root_url) {
-            urls.insert(root_url.clone());
-            storage.add_url(root_url);
-            info!(
-                "Added root URL for domain {}: {}",
-                domain,
-                smart_crawler::utils::construct_root_url(domain)
-            );
-        }
-    }
+    if urls.len() < max_urls_per_domain {
+        info!(
+            "Domain {} has {} URL(s), searching for more (max: {})...",
+            domain,
+            urls.len(),
+            max_urls_per_domain
+        );
 
-    // For each domain, try to find additional URLs
-    for (domain, urls) in &mut domain_urls {
-        if urls.len() < 3 {
-            info!(
-                "Domain {} has only {} URL(s), searching for more...",
-                domain,
-                urls.len()
-            );
+        // Pick the first URL to extract links from
+        if let Some(first_url) = urls.iter().next() {
+            match process_url(&mut browser, &parser, &mut storage, first_url, true).await {
+                Ok(html_source) => {
+                    let additional_urls = parser.extract_links(&html_source, domain);
+                    let mut added_count = 0;
 
-            // Pick the first URL to extract links from
-            if let Some(first_url) = urls.iter().next() {
-                match process_url(&mut browser, &parser, &mut storage, first_url, true).await {
-                    Ok(html_source) => {
-                        let additional_urls = parser.extract_links(&html_source, domain);
-                        let mut added_count = 0;
-
-                        for additional_url in additional_urls {
-                            if urls.len() >= 3 {
-                                break;
-                            }
-                            if urls.insert(additional_url.clone()) {
-                                storage.add_url(additional_url);
-                                added_count += 1;
-                            }
+                    for additional_url in additional_urls {
+                        if urls.len() >= max_urls_per_domain {
+                            break;
                         }
+                        if urls.insert(additional_url.clone()) {
+                            storage.add_url(additional_url);
+                            added_count += 1;
+                        }
+                    }
 
-                        info!(
-                            "Found {} additional URLs for domain {}",
-                            added_count, domain
-                        );
-                    }
-                    Err(e) => {
-                        error!("Failed to extract links from {}: {}", first_url, e);
-                    }
+                    info!(
+                        "Found {} additional URLs for domain {}",
+                        added_count, domain
+                    );
+                }
+                Err(e) => {
+                    error!("Failed to extract links from {}: {}", first_url, e);
                 }
             }
         }
     }
 
-    // Phase 2: Process all URLs (initial + discovered) with root URL prioritization
-    info!("Processing all URLs with root URL prioritization");
+    // Phase 2: Process all discovered URLs
+    info!("Processing all discovered URLs");
 
     let mut all_urls: Vec<String> = Vec::new();
 
-    // First, add all user-specified URLs
-    for url in &args.links {
-        all_urls.push(url.clone());
-    }
+    // Collect all URLs with root URL prioritized
+    let domain = &args.domain;
+    let urls = domain_urls.get(domain).unwrap();
+    let root_url = smart_crawler::utils::construct_root_url(domain);
 
-    // Then, add root URLs for each domain (if not already in user-specified URLs)
-    for domain in domain_urls.keys() {
-        let root_url = smart_crawler::utils::construct_root_url(domain);
-        if !args.links.contains(&root_url) {
-            all_urls.push(root_url);
-        }
+    // Add root URL first
+    if urls.contains(&root_url) {
+        all_urls.push(root_url.clone());
     }
-
-    // Finally, add all other discovered URLs
-    for urls in domain_urls.values() {
-        for url in urls {
-            if !args.links.contains(url) && !smart_crawler::utils::is_root_url(url) {
-                all_urls.push(url.clone());
-            }
+    // Then add other URLs
+    for url in urls {
+        if url != &root_url {
+            all_urls.push(url.clone());
         }
     }
 
@@ -151,72 +134,100 @@ async fn main() {
         }
     }
 
-    // Phase 2.5: Apply template detection if enabled
-    if args.template {
-        info!("Applying template detection to HTML content");
-        apply_template_detection_to_storage(&mut storage);
-    }
+    // Phase 3: Template analysis (prep mode) or standard duplicate analysis
+    if args.prep {
+        info!("Running template detection analysis in prep mode");
+        let mut combined_store = TemplatePathStore::new();
+        let template_detector = TemplateDetector::new();
 
-    // Phase 3: Analyze domain duplicates (skip if template mode is enabled)
-    if !args.template {
-        info!("Analyzing domain-level duplicate nodes");
-
-        for domain in domain_urls.keys() {
-            storage.analyze_domain_duplicates(domain);
-            if let Some(duplicates) = storage.get_domain_duplicates(domain) {
-                let duplicate_count = duplicates.get_duplicate_count();
-                if duplicate_count > 0 {
-                    info!(
-                        "Found {} duplicate node patterns for domain {}",
-                        duplicate_count, domain
-                    );
-                } else {
-                    info!(
-                        "No duplicate patterns found for domain {} (likely insufficient pages)",
-                        domain
-                    );
+        // Process each completed URL to extract template paths
+        let completed_urls = storage.get_completed_urls();
+        for url_data in &completed_urls {
+            if let Some(html_tree) = &url_data.html_tree {
+                let url_store = template_detector.extract_templates_with_paths(html_tree);
+                for path in url_store.get_paths() {
+                    combined_store.add_path(path.clone());
                 }
             }
         }
+
+        info!(
+            "Template analysis complete, found {} unique template paths",
+            combined_store.get_paths().len()
+        );
     } else {
-        info!("Skipping domain duplicate analysis in template mode");
+        info!("Running standard duplicate analysis");
+
+        let domain = &args.domain;
+        storage.analyze_domain_duplicates(domain);
+        if let Some(duplicates) = storage.get_domain_duplicates(domain) {
+            let duplicate_count = duplicates.get_duplicate_count();
+            if duplicate_count > 0 {
+                info!(
+                    "Found {} duplicate node patterns for domain {}",
+                    duplicate_count, domain
+                );
+            } else {
+                info!(
+                    "No duplicate patterns found for domain {} (likely insufficient pages)",
+                    domain
+                );
+            }
+        }
     }
 
     let _ = browser.close().await;
 
-    println!("\n=== Crawling Results ===");
-    let completed_urls = storage.get_completed_urls();
+    if args.prep {
+        // In prep mode, output detected template paths in serialized format
+        println!("\n=== Template Path Detection Results ===");
 
-    if completed_urls.is_empty() {
-        println!("No URLs were successfully processed.");
-    } else {
-        for url_data in completed_urls {
-            let title = url_data.title.as_deref().unwrap_or("No title found");
-            println!("URL: {}", url_data.url);
-            println!("Title: {title}");
-            println!("Domain: {}", url_data.domain);
+        let mut combined_store = TemplatePathStore::new();
+        let template_detector = TemplateDetector::new();
 
-            if args.verbose {
+        // Process each completed URL to extract template paths
+        let completed_urls = storage.get_completed_urls();
+        if completed_urls.is_empty() {
+            println!("No URLs were successfully processed.");
+        } else {
+            println!(
+                "Processed {} URLs for domain {}:",
+                completed_urls.len(),
+                args.domain
+            );
+            for url_data in &completed_urls {
+                println!(
+                    "  - {} ({})",
+                    url_data.url,
+                    url_data.title.as_deref().unwrap_or("No title")
+                );
+
                 if let Some(html_tree) = &url_data.html_tree {
-                    if args.template {
-                        // In template mode, show HTML tree with template patterns (no duplicate filtering)
-                        println!("HTML Tree with Template Patterns:");
-                        print_html_tree_with_template(html_tree, 0, false);
-                    } else if let Some(domain_duplicates) =
-                        storage.get_domain_duplicates(&url_data.domain)
-                    {
-                        let filtered_tree =
-                            HtmlParser::filter_domain_duplicates(html_tree, domain_duplicates);
-                        println!("Filtered HTML Tree (showing complete structure with duplicate marking):");
-                        print_html_tree_with_template(&filtered_tree, 0, false);
-                    } else {
-                        println!("HTML Tree (no duplicates to filter):");
-                        print_html_tree_with_template(html_tree, 0, false);
+                    let url_store = template_detector.extract_templates_with_paths(html_tree);
+                    for path in url_store.get_paths() {
+                        combined_store.add_path(path.clone());
                     }
                 }
             }
 
-            println!("---");
+            println!("\nDetected Template Paths (Rust-serializable format):");
+            println!("{}", combined_store.to_serialized_string());
+        }
+    } else {
+        // Regular mode - show crawling results
+        println!("\n=== Crawling Results ===");
+        let completed_urls = storage.get_completed_urls();
+
+        if completed_urls.is_empty() {
+            println!("No URLs were successfully processed.");
+        } else {
+            for url_data in completed_urls {
+                let title = url_data.title.as_deref().unwrap_or("No title found");
+                println!("URL: {}", url_data.url);
+                println!("Title: {title}");
+                println!("Domain: {}", url_data.domain);
+                println!("---");
+            }
         }
     }
 
@@ -272,74 +283,5 @@ async fn process_url(
             }
             Err(error_msg)
         }
-    }
-}
-
-/// Apply template detection to all HTML trees in storage
-fn apply_template_detection_to_storage(storage: &mut smart_crawler::UrlStorage) {
-    let detector = smart_crawler::TemplateDetector::new();
-
-    // Get all URLs to process
-    let all_urls: Vec<String> = storage
-        .get_all_urls()
-        .iter()
-        .map(|url_data| url_data.url.clone())
-        .collect();
-
-    for url in &all_urls {
-        if let Some(url_data) = storage.get_url_data_mut(url) {
-            if let Some(html_tree) = &mut url_data.html_tree {
-                apply_template_to_node(html_tree, &detector);
-            }
-        }
-    }
-}
-
-/// Recursively apply template detection to HTML node content
-fn apply_template_to_node(
-    node: &mut smart_crawler::HtmlNode,
-    detector: &smart_crawler::TemplateDetector,
-) {
-    // Apply template detection to this node's content
-    if !node.content.is_empty() {
-        node.content = detector.apply_template(&node.content);
-    }
-
-    // Recursively apply to all children
-    for child in &mut node.children {
-        apply_template_to_node(child, detector);
-    }
-}
-
-fn print_html_tree_with_template(
-    node: &smart_crawler::HtmlNode,
-    indent: usize,
-    _use_template: bool,
-) {
-    let indent_str = "  ".repeat(indent);
-
-    // Build the element info string with tag, id, and classes
-    let mut element_info = node.tag.clone();
-    if let Some(id) = &node.id {
-        element_info.push_str(&format!("#{id}"));
-    }
-    if !node.classes.is_empty() {
-        element_info.push_str(&format!("[{}]", node.classes.join(" ")));
-    }
-
-    if !node.content.is_empty() {
-        // Content already contains template patterns if template mode was enabled
-        println!(
-            "{}{}: {}",
-            indent_str,
-            element_info,
-            node.content.chars().take(100).collect::<String>()
-        );
-    } else {
-        println!("{indent_str}{element_info}");
-    }
-
-    for child in &node.children {
-        print_html_tree_with_template(child, indent + 1, _use_template);
     }
 }

@@ -1,5 +1,52 @@
 use regex::Regex;
-use std::collections::HashMap;
+use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
+
+/// Represents an element in the path from HTML root to a template-containing element
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ElementPathComponent {
+    pub tag: String,
+    pub classes: Vec<String>,
+}
+
+/// Complete path from HTML root to a template-containing element
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ElementPath {
+    pub components: Vec<ElementPathComponent>,
+    pub template_pattern: String,
+}
+
+/// Store for tracking detected template paths across pages
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TemplatePathStore {
+    pub detected_paths: HashSet<ElementPath>,
+}
+
+impl TemplatePathStore {
+    pub fn new() -> Self {
+        Self {
+            detected_paths: HashSet::new(),
+        }
+    }
+
+    pub fn add_path(&mut self, path: ElementPath) {
+        self.detected_paths.insert(path);
+    }
+
+    pub fn get_paths(&self) -> &HashSet<ElementPath> {
+        &self.detected_paths
+    }
+
+    pub fn to_serialized_string(&self) -> String {
+        serde_json::to_string_pretty(self).unwrap_or_default()
+    }
+}
+
+impl Default for TemplatePathStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 /// Template variable types that can be detected
 #[derive(Debug, Clone, PartialEq)]
@@ -252,6 +299,50 @@ impl TemplateDetector {
             template.pattern
         } else {
             content.to_string()
+        }
+    }
+
+    /// Extract templates with their element paths from an HTML tree
+    pub fn extract_templates_with_paths(&self, root: &crate::HtmlNode) -> TemplatePathStore {
+        let mut store = TemplatePathStore::new();
+        let mut current_path = Vec::new();
+        self.extract_templates_recursive(root, &mut current_path, &mut store);
+        store
+    }
+
+    fn extract_templates_recursive(
+        &self,
+        node: &crate::HtmlNode,
+        current_path: &mut Vec<ElementPathComponent>,
+        store: &mut TemplatePathStore,
+    ) {
+        // Add current node to path (excluding root html node if tag is empty)
+        if !node.tag.is_empty() {
+            current_path.push(ElementPathComponent {
+                tag: node.tag.clone(),
+                classes: node.classes.clone(),
+            });
+        }
+
+        // Check if current node has template-detectable content
+        if !node.content.is_empty() {
+            if let Some(template) = self.detect_template(&node.content) {
+                let element_path = ElementPath {
+                    components: current_path.clone(),
+                    template_pattern: template.pattern,
+                };
+                store.add_path(element_path);
+            }
+        }
+
+        // Recursively process children
+        for child in &node.children {
+            self.extract_templates_recursive(child, current_path, store);
+        }
+
+        // Remove current node from path when backtracking
+        if !node.tag.is_empty() {
+            current_path.pop();
         }
     }
 }
