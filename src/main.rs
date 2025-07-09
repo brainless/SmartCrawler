@@ -151,6 +151,12 @@ async fn main() {
         }
     }
 
+    // Phase 2.5: Apply template detection if enabled
+    if args.template {
+        info!("Applying template detection to HTML content");
+        apply_template_detection_to_storage(&mut storage);
+    }
+
     // Phase 3: Analyze domain duplicates
     info!("Analyzing domain-level duplicate nodes");
 
@@ -193,10 +199,10 @@ async fn main() {
                         let filtered_tree =
                             HtmlParser::filter_domain_duplicates(html_tree, domain_duplicates);
                         println!("Filtered HTML Tree (showing complete structure with duplicate marking):");
-                        print_html_tree_with_template(&filtered_tree, 0, args.template);
+                        print_html_tree_with_template(&filtered_tree, 0, false);
                     } else {
                         println!("HTML Tree (no duplicates to filter):");
-                        print_html_tree_with_template(html_tree, 0, args.template);
+                        print_html_tree_with_template(html_tree, 0, false);
                     }
                 }
             }
@@ -260,10 +266,46 @@ async fn process_url(
     }
 }
 
+/// Apply template detection to all HTML trees in storage
+fn apply_template_detection_to_storage(storage: &mut smart_crawler::UrlStorage) {
+    let detector = smart_crawler::TemplateDetector::new();
+
+    // Get all URLs to process
+    let all_urls: Vec<String> = storage
+        .get_all_urls()
+        .iter()
+        .map(|url_data| url_data.url.clone())
+        .collect();
+
+    for url in &all_urls {
+        if let Some(url_data) = storage.get_url_data_mut(url) {
+            if let Some(html_tree) = &mut url_data.html_tree {
+                apply_template_to_node(html_tree, &detector);
+            }
+        }
+    }
+}
+
+/// Recursively apply template detection to HTML node content
+fn apply_template_to_node(
+    node: &mut smart_crawler::HtmlNode,
+    detector: &smart_crawler::TemplateDetector,
+) {
+    // Apply template detection to this node's content
+    if !node.content.is_empty() {
+        node.content = detector.apply_template(&node.content);
+    }
+
+    // Recursively apply to all children
+    for child in &mut node.children {
+        apply_template_to_node(child, detector);
+    }
+}
+
 fn print_html_tree_with_template(
     node: &smart_crawler::HtmlNode,
     indent: usize,
-    use_template: bool,
+    _use_template: bool,
 ) {
     let indent_str = "  ".repeat(indent);
 
@@ -277,25 +319,18 @@ fn print_html_tree_with_template(
     }
 
     if !node.content.is_empty() {
-        let content_to_display = if use_template {
-            // Apply template detection to the content
-            let detector = smart_crawler::TemplateDetector::new();
-            detector.apply_template(&node.content)
-        } else {
-            node.content.clone()
-        };
-
+        // Content already contains template patterns if template mode was enabled
         println!(
             "{}{}: {}",
             indent_str,
             element_info,
-            content_to_display.chars().take(100).collect::<String>()
+            node.content.chars().take(100).collect::<String>()
         );
     } else {
         println!("{indent_str}{element_info}");
     }
 
     for child in &node.children {
-        print_html_tree_with_template(child, indent + 1, use_template);
+        print_html_tree_with_template(child, indent + 1, _use_template);
     }
 }

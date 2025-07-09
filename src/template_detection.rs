@@ -495,4 +495,89 @@ mod tests {
             assert_eq!(result, expected, "Failed for input: {}", input);
         }
     }
+
+    #[test]
+    fn test_template_based_duplicate_detection() {
+        use crate::html_parser::HtmlParser;
+        use crate::storage::{FetchStatus, UrlStorage};
+
+        let mut storage = UrlStorage::new();
+        let parser = HtmlParser::new();
+        let detector = TemplateDetector::new();
+
+        // Add URLs to storage
+        storage.add_url("https://example.com/page1".to_string());
+        storage.add_url("https://example.com/page2".to_string());
+
+        // Create HTML with similar structures but different values
+        let html1 = r#"<html><body>
+            <div class="comments">42 comments</div>
+            <div class="timestamp">2 hours ago</div>
+            <div class="likes">123 likes</div>
+        </body></html>"#;
+
+        let html2 = r#"<html><body>
+            <div class="comments">16 comments</div>
+            <div class="timestamp">5 hours ago</div>
+            <div class="likes">89 likes</div>
+        </body></html>"#;
+
+        let mut tree1 = parser.parse(html1);
+        let mut tree2 = parser.parse(html2);
+
+        // Apply template detection to the trees
+        apply_template_to_tree(&mut tree1, &detector);
+        apply_template_to_tree(&mut tree2, &detector);
+
+        // Set the HTML data for both URLs
+        if let Some(url_data) = storage.get_url_data_mut("https://example.com/page1") {
+            url_data.set_html_data(html1.to_string(), tree1, Some("Page 1".to_string()));
+            url_data.update_status(FetchStatus::Success);
+        }
+
+        if let Some(url_data) = storage.get_url_data_mut("https://example.com/page2") {
+            url_data.set_html_data(html2.to_string(), tree2, Some("Page 2".to_string()));
+            url_data.update_status(FetchStatus::Success);
+        }
+
+        // Analyze domain duplicates after template detection
+        storage.analyze_domain_duplicates("example.com");
+
+        let duplicates = storage.get_domain_duplicates("example.com");
+        assert!(duplicates.is_some());
+
+        let duplicates = duplicates.unwrap();
+
+        // All three content patterns should be detected as duplicates now:
+        // "42 comments" and "16 comments" both become "{count} comments"
+        // "2 hours ago" and "5 hours ago" both become "{time} hours ago"
+        // "123 likes" and "89 likes" both become "{count} likes"
+        assert!(duplicates.get_duplicate_count() > 0);
+
+        // Verify that the template-converted content is considered duplicate
+        let page1_tree = storage
+            .get_url_data("https://example.com/page1")
+            .and_then(|data| data.html_tree.as_ref())
+            .unwrap();
+        let body = &page1_tree.children[0];
+
+        // Check that content has been converted to templates
+        assert_eq!(body.children[0].content, "{count} comments");
+        assert_eq!(body.children[1].content, "{time} hours ago");
+        assert_eq!(body.children[2].content, "{count} likes");
+    }
+
+    /// Helper function to apply template detection to an HTML tree (for testing)
+    fn apply_template_to_tree(
+        node: &mut crate::html_parser::HtmlNode,
+        detector: &TemplateDetector,
+    ) {
+        if !node.content.is_empty() {
+            node.content = detector.apply_template(&node.content);
+        }
+
+        for child in &mut node.children {
+            apply_template_to_tree(child, detector);
+        }
+    }
 }
