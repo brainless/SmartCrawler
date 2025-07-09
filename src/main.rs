@@ -202,7 +202,8 @@ async fn main() {
                         // In template mode, show HTML tree with template patterns (no duplicate filtering)
                         println!("HTML Tree with Template Patterns:");
                         print_html_tree_with_template(html_tree, 0, false);
-                    } else if let Some(domain_duplicates) = storage.get_domain_duplicates(&url_data.domain)
+                    } else if let Some(domain_duplicates) =
+                        storage.get_domain_duplicates(&url_data.domain)
                     {
                         let filtered_tree =
                             HtmlParser::filter_domain_duplicates(html_tree, domain_duplicates);

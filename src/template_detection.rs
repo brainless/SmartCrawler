@@ -627,7 +627,10 @@ mod tests {
         // So let's verify that without calling analyze_domain_duplicates,
         // we get no duplicate information
         let duplicates = storage.get_domain_duplicates("example.com");
-        assert!(duplicates.is_none(), "No duplicates should be analyzed in template mode");
+        assert!(
+            duplicates.is_none(),
+            "No duplicates should be analyzed in template mode"
+        );
 
         // Verify that content has been converted to templates and is visible
         let page1_tree = storage
