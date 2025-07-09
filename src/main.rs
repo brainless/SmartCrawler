@@ -151,9 +151,11 @@ async fn main() {
             }
         }
 
+        let validated_paths = combined_store.get_validated_paths();
         info!(
-            "Template analysis complete, found {} unique template paths",
-            combined_store.get_paths().len()
+            "Template analysis complete, found {} total template paths, {} validated (>3 elements)",
+            combined_store.get_paths().len(),
+            validated_paths.len()
         );
     } else {
         info!("Running standard duplicate analysis");
@@ -210,8 +212,8 @@ async fn main() {
                 }
             }
 
-            println!("\nDetected Template Paths (Rust-serializable format):");
-            println!("{}", combined_store.to_serialized_string());
+            println!("\nValidated Template Paths (>3 elements, Rust-serializable format):");
+            println!("{}", combined_store.to_validated_serialized_string());
         }
     } else {
         // Regular mode - show crawling results
