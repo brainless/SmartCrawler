@@ -193,10 +193,10 @@ async fn main() {
                         let filtered_tree =
                             HtmlParser::filter_domain_duplicates(html_tree, domain_duplicates);
                         println!("Filtered HTML Tree (showing complete structure with duplicate marking):");
-                        print_html_tree(&filtered_tree, 0);
+                        print_html_tree_with_template(&filtered_tree, 0, args.template);
                     } else {
                         println!("HTML Tree (no duplicates to filter):");
-                        print_html_tree(html_tree, 0);
+                        print_html_tree_with_template(html_tree, 0, args.template);
                     }
                 }
             }
@@ -260,7 +260,11 @@ async fn process_url(
     }
 }
 
-fn print_html_tree(node: &smart_crawler::HtmlNode, indent: usize) {
+fn print_html_tree_with_template(
+    node: &smart_crawler::HtmlNode,
+    indent: usize,
+    use_template: bool,
+) {
     let indent_str = "  ".repeat(indent);
 
     // Build the element info string with tag, id, and classes
@@ -273,17 +277,25 @@ fn print_html_tree(node: &smart_crawler::HtmlNode, indent: usize) {
     }
 
     if !node.content.is_empty() {
+        let content_to_display = if use_template {
+            // Apply template detection to the content
+            let detector = smart_crawler::TemplateDetector::new();
+            detector.apply_template(&node.content)
+        } else {
+            node.content.clone()
+        };
+
         println!(
             "{}{}: {}",
             indent_str,
             element_info,
-            node.content.chars().take(100).collect::<String>()
+            content_to_display.chars().take(100).collect::<String>()
         );
     } else {
         println!("{indent_str}{element_info}");
     }
 
     for child in &node.children {
-        print_html_tree(child, indent + 1);
+        print_html_tree_with_template(child, indent + 1, use_template);
     }
 }

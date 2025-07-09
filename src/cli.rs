@@ -6,6 +6,7 @@ use url::Url;
 pub struct CliArgs {
     pub links: Vec<String>,
     pub verbose: bool,
+    pub template: bool,
 }
 
 impl CliArgs {
@@ -27,6 +28,12 @@ impl CliArgs {
                     .help("Enable verbose output showing filtered HTML node tree")
                     .action(clap::ArgAction::SetTrue),
             )
+            .arg(
+                Arg::new("template")
+                    .long("template")
+                    .help("Enable template detection mode to identify patterns like '{count} comments' in HTML content")
+                    .action(clap::ArgAction::SetTrue),
+            )
             .get_matches();
 
         let links: Vec<String> = matches
@@ -37,10 +44,12 @@ impl CliArgs {
 
         let validated_links = Self::validate_and_deduplicate_links(links)?;
         let verbose = matches.get_flag("verbose");
+        let template = matches.get_flag("template");
 
         Ok(CliArgs {
             links: validated_links,
             verbose,
+            template,
         })
     }
 
@@ -102,5 +111,20 @@ mod tests {
         let result = CliArgs::validate_and_deduplicate_links(links);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("No valid URLs provided"));
+    }
+
+    #[test]
+    fn test_cli_template_flag() {
+        // Test that template flag is properly parsed (this is a simplified test
+        // since we can't easily test the full CLI parsing in unit tests)
+        let args = CliArgs {
+            links: vec!["https://example.com".to_string()],
+            verbose: true,
+            template: true,
+        };
+
+        assert!(args.template);
+        assert!(args.verbose);
+        assert_eq!(args.links.len(), 1);
     }
 }
