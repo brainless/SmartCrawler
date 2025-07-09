@@ -322,7 +322,7 @@ mod tests {
 
         for (input, expected) in patterns {
             let template = detector.detect_template(input).unwrap();
-            assert_eq!(template.pattern, expected, "Failed for input: {}", input);
+            assert_eq!(template.pattern, expected, "Failed for input: {input}");
             assert_eq!(template.variables[0].1, VariableType::Number);
         }
     }
@@ -341,7 +341,7 @@ mod tests {
 
         for (input, expected) in patterns {
             let template = detector.detect_template(input).unwrap();
-            assert_eq!(template.pattern, expected, "Failed for input: {}", input);
+            assert_eq!(template.pattern, expected, "Failed for input: {input}");
         }
     }
 
@@ -360,8 +360,7 @@ mod tests {
         for input in non_patterns {
             assert!(
                 detector.detect_template(input).is_none(),
-                "Should not detect pattern for: {}",
-                input
+                "Should not detect pattern for: {input}"
             );
         }
     }
@@ -466,7 +465,7 @@ mod tests {
 
         for (input, expected) in social_patterns {
             let result = detector.apply_template(input);
-            assert_eq!(result, expected, "Failed for input: {}", input);
+            assert_eq!(result, expected, "Failed for input: {input}");
         }
     }
 
@@ -492,7 +491,7 @@ mod tests {
 
         for (input, expected) in time_patterns {
             let result = detector.apply_template(input);
-            assert_eq!(result, expected, "Failed for input: {}", input);
+            assert_eq!(result, expected, "Failed for input: {input}");
         }
     }
 
